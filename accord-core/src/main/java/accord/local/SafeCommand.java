@@ -18,9 +18,8 @@
 
 package accord.local;
 
-import java.util.Collection;
-
 import accord.api.Result;
+import accord.local.Command.TransientListener;
 import accord.primitives.Ballot;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
@@ -41,7 +40,7 @@ public abstract class SafeCommand
     public abstract boolean invalidated();
     public abstract void addListener(Command.TransientListener listener);
     public abstract boolean removeListener(Command.TransientListener listener);
-    public abstract Collection<Command.TransientListener> transientListeners();
+    public abstract Listeners<Command.TransientListener> transientListeners();
 
     public boolean isEmpty()
     {
@@ -64,6 +63,12 @@ public abstract class SafeCommand
     public Command addListener(Command.DurableAndIdempotentListener listener)
     {
         return update(Command.addListener(current(), listener));
+    }
+
+    public void addAndInvokeListener(SafeCommandStore safeStore, TransientListener listener)
+    {
+        addListener(listener);
+        listener.onChange(safeStore, this);
     }
 
     public Command removeListener(Command.DurableAndIdempotentListener listener)

@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.annotation.Nullable;
 
 import accord.api.Data;
 import accord.api.DataStore;
@@ -33,7 +32,9 @@ import accord.local.PreLoadContext;
 import accord.local.Status;
 import accord.messages.Callback;
 import accord.messages.MessageType;
-import accord.messages.ReadData;
+import accord.messages.ReadData.ReadNack;
+import accord.messages.ReadData.ReadOk;
+import accord.messages.ReadData.ReadReply;
 import accord.messages.WaitAndReadData;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
@@ -45,6 +46,7 @@ import accord.utils.Invariants;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
+import javax.annotation.Nullable;
 
 import static accord.primitives.Routables.Slice.Minimal;
 
@@ -118,16 +120,16 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         Ranges ownedRanges = ownedRangesForNode(to);
         Invariants.checkArgument(ownedRanges.containsAll(ranges));
         PartialDeps partialDeps = syncPoint.waitFor.slice(ownedRanges, ranges);
-        node.send(to, new FetchRequest(syncPoint.sourceEpoch(), syncPoint.syncId, ranges, partialDeps, rangeReadTxn(ranges)), new Callback<ReadData.ReadReply>()
+        node.send(to, new FetchRequest(syncPoint.sourceEpoch(), syncPoint.syncId, ranges, partialDeps, rangeReadTxn(ranges)), new Callback<ReadReply>()
         {
             @Override
-            public void onSuccess(Node.Id from, ReadData.ReadReply reply)
+            public void onSuccess(Node.Id from, ReadReply reply)
             {
                 if (!reply.isOk())
                 {
                     fail(to, new RuntimeException(reply.toString()));
                     inflight.remove(key).cancel();
-                    switch ((ReadData.ReadNack) reply)
+                    switch ((ReadNack) reply)
                     {
                         default: throw new AssertionError("Unhandled enum");
                         case Invalid:
@@ -260,7 +262,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         }
     }
 
-    public static class FetchResponse extends ReadData.ReadOk
+    public static class FetchResponse extends ReadOk
     {
         public final Timestamp maxApplied;
         public FetchResponse(@Nullable Ranges unavailable, @Nullable Data data, Timestamp maxApplied)

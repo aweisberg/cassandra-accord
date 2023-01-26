@@ -18,10 +18,6 @@
 
 package accord.local;
 
-import accord.messages.BeginRecovery;
-import accord.primitives.Ballot;
-import accord.utils.Invariants;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -29,14 +25,32 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static accord.local.Status.Definition.*;
-import static accord.local.Status.Known.*;
-import static accord.local.Status.KnownDeps.*;
-import static accord.local.Status.KnownExecuteAt.*;
+import accord.messages.BeginRecovery;
+import accord.primitives.Ballot;
+import accord.utils.Invariants;
+
+import static accord.local.Status.Definition.DefinitionKnown;
+import static accord.local.Status.Definition.DefinitionUnknown;
+import static accord.local.Status.Definition.NoOp;
+import static accord.local.Status.Known.DefinitionOnly;
+import static accord.local.Status.Known.Nothing;
+import static accord.local.Status.KnownDeps.DepsKnown;
+import static accord.local.Status.KnownDeps.DepsProposed;
+import static accord.local.Status.KnownDeps.DepsUnknown;
+import static accord.local.Status.KnownDeps.NoDeps;
 import static accord.local.Status.KnownExecuteAt.ExecuteAtKnown;
 import static accord.local.Status.KnownExecuteAt.ExecuteAtProposed;
-import static accord.local.Status.Outcome.*;
-import static accord.local.Status.Phase.*;
+import static accord.local.Status.KnownExecuteAt.ExecuteAtUnknown;
+import static accord.local.Status.KnownExecuteAt.NoExecuteAt;
+import static accord.local.Status.Outcome.InvalidationApplied;
+import static accord.local.Status.Outcome.OutcomeApplied;
+import static accord.local.Status.Outcome.OutcomeKnown;
+import static accord.local.Status.Outcome.OutcomeUnknown;
+import static accord.local.Status.Phase.Accept;
+import static accord.local.Status.Phase.Commit;
+import static accord.local.Status.Phase.None;
+import static accord.local.Status.Phase.Persist;
+import static accord.local.Status.Phase.PreAccept;
 
 public enum Status
 {

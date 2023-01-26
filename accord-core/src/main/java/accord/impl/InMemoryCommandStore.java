@@ -20,13 +20,13 @@ package accord.impl;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
@@ -38,6 +38,10 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.Agent;
 import accord.api.DataStore;
@@ -73,16 +77,13 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import javax.annotation.Nullable;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestDep.WITH;
+import static accord.local.Status.Applied;
 import static accord.local.Status.Committed;
+import static accord.local.Status.Invalidated;
 import static accord.local.Status.PreAccepted;
 import static accord.local.Status.PreCommitted;
-import static accord.local.Status.Applied;
-import static accord.local.Status.Invalidated;
 import static accord.primitives.Routables.Slice.Minimal;
 
 public abstract class InMemoryCommandStore extends CommandStore
@@ -271,7 +272,7 @@ public abstract class InMemoryCommandStore extends CommandStore
         return attrs;
     }
 
-    private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
+    private <O> O mapReduceForKey(InMemorySafeStore safeStore, Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, Predicate<O> terminate)
     {
         switch (keysOrRanges.domain()) {
             default:
@@ -285,7 +286,7 @@ public abstract class InMemoryCommandStore extends CommandStore
                     if (forKey.current() == null)
                         continue;
                     accumulate = map.apply(forKey.current(), accumulate);
-                    if (accumulate.equals(terminalValue))
+                    if (terminate.test(accumulate))
                         return accumulate;
                 }
                 break;
@@ -299,7 +300,7 @@ public abstract class InMemoryCommandStore extends CommandStore
                         if (forKey.value() == null)
                             continue;
                         accumulate = map.apply(forKey.value(), accumulate);
-                        if (accumulate.equals(terminalValue))
+                        if (terminate.test(accumulate))
                             return accumulate;
                     }
                 }
@@ -561,9 +562,9 @@ public abstract class InMemoryCommandStore extends CommandStore
             return true;
         }
 
-        public Collection<Command.TransientListener> transientListeners()
+        public Listeners<Command.TransientListener> transientListeners()
         {
-            return transientListeners == null ? Collections.emptySet() : transientListeners;
+            return transientListeners == null ? Listeners.EMPTY : transientListeners;
         }
     }
 
@@ -579,6 +580,18 @@ public abstract class InMemoryCommandStore extends CommandStore
         public InMemorySafeCommandsForKey createSafeReference()
         {
             return new InMemorySafeCommandsForKey(key, this);
+        }
+    }
+
+    private static class TimestampAndStatus
+    {
+        public final Timestamp timestamp;
+        public final Status status;
+
+        public TimestampAndStatus(Timestamp timestamp, Status status)
+        {
+            this.timestamp = timestamp;
+            this.status = status;
         }
     }
 
@@ -671,7 +684,7 @@ public abstract class InMemoryCommandStore extends CommandStore
         @Override
         public Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
         {
-            Timestamp timestamp = commandStore.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
+            Timestamp timestamp = commandStore.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, Objects::isNull);
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
             for (RangeCommand command : commandStore.rangeCommands.values())
             {
@@ -738,6 +751,12 @@ public abstract class InMemoryCommandStore extends CommandStore
         @Override
         public <T> T mapReduce(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, T terminalValue)
         {
+            return mapReduceWithTerminate(keysOrRanges, slice, testKind, testTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, accumulate, Predicate.isEqual(terminalValue));
+        }
+
+        @Override
+        public <T> T mapReduceWithTerminate(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, Predicate<T> terminate)
+        {
             accumulate = commandStore.mapReduceForKey(this, keysOrRanges, slice, (forKey, prev) -> {
                 CommandTimeseries<?> timeseries;
                 switch (testTimestamp)
@@ -763,15 +782,15 @@ public abstract class InMemoryCommandStore extends CommandStore
                     case MAY_EXECUTE_BEFORE:
                         remapTestTimestamp = CommandTimeseries.TestTimestamp.BEFORE;
                 }
-                return timeseries.mapReduce(testKind, remapTestTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, prev, terminalValue);
-            }, accumulate, terminalValue);
+                return timeseries.mapReduce(testKind, remapTestTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, prev, terminate);
+            }, accumulate, terminate);
 
-            if (accumulate.equals(terminalValue))
+            if (terminate.test(accumulate))
                 return accumulate;
 
             // TODO (find lib, efficiency): this is super inefficient, need to store Command in something queryable
             Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);
-            Map<Range, List<Map.Entry<TxnId, Timestamp>>> collect = new TreeMap<>(Range::compare);
+            Map<Range, List<Map.Entry<TxnId, TimestampAndStatus>>> collect = new TreeMap<>(Range::compare);
             commandStore.rangeCommands.forEach(((txnId, rangeCommand) -> {
                 Command command = rangeCommand.command.value();
                 Invariants.nonNull(command);
@@ -816,9 +835,9 @@ public abstract class InMemoryCommandStore extends CommandStore
 
                 Routables.foldl(rangeCommand.ranges, sliced, (r, in, i) -> {
                     // TODO (easy, efficiency): pass command as a parameter to Fold
-                    List<Map.Entry<TxnId, Timestamp>> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
+                    List<Map.Entry<TxnId, TimestampAndStatus>> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
                     if (list.isEmpty() || !list.get(list.size() - 1).getKey().equals(command.txnId()))
-                        list.add(new AbstractMap.SimpleImmutableEntry<>(command.txnId(), command.executeAt()));
+                        list.add(new AbstractMap.SimpleImmutableEntry<>(command.txnId(), new TimestampAndStatus(command.executeAt(), command.status())));
                     return in;
                 }, collect);
             }));
@@ -848,20 +867,20 @@ public abstract class InMemoryCommandStore extends CommandStore
 
                     Routables.foldl(ranges, sliced, (r, in, i) -> {
                         // TODO (easy, efficiency): pass command as a parameter to Fold
-                        List<Map.Entry<TxnId, Timestamp>> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
+                        List<Map.Entry<TxnId, TimestampAndStatus>> list = in.computeIfAbsent(r, ignore -> new ArrayList<>());
                         if (list.isEmpty() || !list.get(list.size() - 1).getKey().equals(txnId))
-                            list.add(new AbstractMap.SimpleImmutableEntry<>(txnId, txnId));
+                            list.add(new AbstractMap.SimpleImmutableEntry<>(txnId, new TimestampAndStatus(txnId, Status.NotWitnessed)));
                         return in;
                     }, collect);
                 }));
             }
 
-            for (Map.Entry<Range, List<Map.Entry<TxnId, Timestamp>>> e : collect.entrySet())
+            for (Map.Entry<Range, List<Map.Entry<TxnId, TimestampAndStatus>>> e : collect.entrySet())
             {
-                for (Map.Entry<TxnId, Timestamp> command : e.getValue())
+                for (Map.Entry<TxnId, TimestampAndStatus> command : e.getValue())
                 {
                     T initial = accumulate;
-                    accumulate = map.apply(e.getKey(), command.getKey(), command.getValue(), initial);
+                    accumulate = map.apply(e.getKey(), command.getKey(), command.getValue().timestamp, command.getValue().status, initial);
                 }
             }
 

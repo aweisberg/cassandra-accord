@@ -20,9 +20,10 @@ package accord.coordinate;
 
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.local.Node;
-import accord.messages.Apply;
-import accord.messages.Commit;
 import accord.messages.PreAccept.PreAcceptOk;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
@@ -35,12 +36,14 @@ import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.async.AsyncResult;
-import accord.utils.Invariants;
+import javax.annotation.Nullable;
 
 import static accord.coordinate.Propose.Invalidate.proposeAndCommitInvalidate;
 import static accord.primitives.Timestamp.mergeMax;
 import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.utils.Functions.foldl;
+import static accord.utils.Invariants.checkArgument;
+import static accord.utils.Invariants.checkState;
 
 /**
  * Perform initial rounds of PreAccept and Accept until we have reached agreement about when we should execute.
@@ -50,37 +53,43 @@ import static accord.utils.Functions.foldl;
  */
 public class CoordinateSyncPoint extends CoordinatePreAccept<SyncPoint>
 {
-    private CoordinateSyncPoint(Node node, TxnId txnId, Txn txn, FullRoute<?> route)
+    @SuppressWarnings("unused")
+    private static final Logger logger = LoggerFactory.getLogger(CoordinateSyncPoint.class);
+
+    // Whether to wait on the dependencies applying globally before returning a result
+    private final boolean async;
+
+    private CoordinateSyncPoint(Node node, TxnId txnId, Txn txn, FullRoute<?> route, boolean async)
     {
         super(node, txnId, txn, route);
+        checkArgument(txnId.rw() == Kind.SyncPoint || async, "Exclusive sync points only support async application");
+        this.async = async;
     }
 
-    public static AsyncResult<SyncPoint> exclusive(Node node, Seekables<?, ?> keysOrRanges)
+    public static CoordinateSyncPoint exclusive(Node node, Seekables<?, ?> keysOrRanges)
     {
-        return coordinate(node, ExclusiveSyncPoint, keysOrRanges);
+        return coordinate(node, null, ExclusiveSyncPoint, keysOrRanges, true);
     }
 
-    public static AsyncResult<SyncPoint> inclusive(Node node, Seekables<?, ?> keysOrRanges)
+    public static CoordinateSyncPoint inclusive(Node node, Seekables<?, ?> keysOrRanges, boolean async)
     {
-        return coordinate(node, Kind.SyncPoint, keysOrRanges);
+        return coordinate(node, null,  Kind.SyncPoint, keysOrRanges, async);
     }
 
-    private static AsyncResult<SyncPoint> coordinate(Node node, Kind kind, Seekables<?, ?> keysOrRanges)
+    private static CoordinateSyncPoint coordinate(Node node, @Nullable TxnId txnId, Kind kind, Seekables<?, ?> keysOrRanges, boolean async)
     {
-        TxnId txnId = node.nextTxnId(kind, keysOrRanges.domain());
+        if (txnId == null)
+            txnId = node.nextTxnId(kind, keysOrRanges.domain());
+        checkState(txnId.rw() == Kind.SyncPoint || txnId.rw() == ExclusiveSyncPoint);
         FullRoute<?> route = node.computeRoute(txnId, keysOrRanges);
-        CoordinateSyncPoint coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(kind, keysOrRanges), route);
+        CoordinateSyncPoint coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(kind, keysOrRanges), route, async);
         coordinate.start();
         return coordinate;
     }
 
     public static AsyncResult<SyncPoint> coordinate(Node node, TxnId txnId, Seekables<?, ?> keysOrRanges)
     {
-        Invariants.checkState(txnId.rw() == Kind.SyncPoint || txnId.rw() == ExclusiveSyncPoint);
-        FullRoute<?> route = node.computeRoute(txnId, keysOrRanges);
-        CoordinateSyncPoint coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(txnId.rw(), keysOrRanges), route);
-        coordinate.start();
-        return coordinate;
+        return coordinate(node, txnId, txnId.rw(), keysOrRanges, true);
     }
 
     void onNewEpoch(Topologies topologies, Timestamp executeAt, List<PreAcceptOk> successes)
@@ -106,19 +115,27 @@ public class CoordinateSyncPoint extends CoordinatePreAccept<SyncPoint>
             executeAt = txnId;
             // we don't need to fetch deps from Accept replies, so we don't need to contact unsynced epochs
             topologies = node.topology().forEpoch(route, txnId.epoch());
-            new Propose<SyncPoint>(node, topologies, Ballot.ZERO, txnId, txn, route, executeAt, deps, this)
-            {
-                @Override
-                void onAccepted()
-                {
-                    Topologies commit = node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
-                    Topologies latest = commit.size() == 1 ? commit : node.topology().forEpoch(route, executeAt.epoch());
-                    if (latest != commit)
-                        node.send(commit.nodes(), id -> new Commit(Commit.Kind.Maximal, id, commit.forEpoch(txnId.epoch()), commit, txnId, txn, route, null, executeAt, deps, false));
-                    node.send(latest.nodes(), id -> new Apply(id, latest, latest, executeAt.epoch(), txnId, route, txn, executeAt, deps, txn.execute(txnId, executeAt, null), txn.result(txnId, executeAt, null)));
-                    accept(new SyncPoint(txnId, deps, route), null);
-                }
-            }.start();
+            // SyncPoint transactions always propose their own txnId as their executeAt, as they are not really executed.
+            // They only create happens-after relationships wrt their dependencies, which represent all transactions
+            // that *may* execute before their txnId, so once these dependencies apply we can say that any action that
+            // awaits these dependencies applies after them. In the case of ExclusiveSyncPoint, we additionally guarantee
+            // that no lower TxnId can later apply.
+            ProposeSyncPoint.proposeSyncPoint(node, topologies, Ballot.ZERO, txnId, txn, route, deps, executeAt, this, async, tracker.nodes());
+            // TODO make sure any changes here are properly integrated with ProposeSyncPoint
+            // It seems like sending the commit is not there yet
+//            new Propose<SyncPoint>(node, topologies, Ballot.ZERO, txnId, txn, route, executeAt, deps, this)
+//            {
+//                @Override
+//                void onAccepted()
+//                {
+//                    Topologies commit = node.topology().preciseEpochs(route, txnId.epoch(), executeAt.epoch());
+//                    Topologies latest = commit.size() == 1 ? commit : node.topology().forEpoch(route, executeAt.epoch());
+//                    if (latest != commit)
+//                        node.send(commit.nodes(), id -> new Commit(Commit.Kind.Maximal, id, commit.forEpoch(txnId.epoch()), commit, txnId, txn, route, null, executeAt, deps, false));
+//                    node.send(latest.nodes(), id -> new Apply(id, latest, latest, executeAt.epoch(), txnId, route, txn, executeAt, deps, txn.execute(txnId, executeAt, null), txn.result(txnId, executeAt, null)));
+//                    accept(new SyncPoint(txnId, deps, route), null);
+//                }
+//            }.start();
         }
     }
 }

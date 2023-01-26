@@ -19,23 +19,23 @@
 package accord.messages;
 
 import java.util.BitSet;
-import javax.annotation.Nullable;
-
-import accord.api.Data;
-import accord.topology.Topologies;
-import accord.utils.Invariants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.api.Data;
 import accord.local.CommandStore;
 import accord.local.Node;
 import accord.local.SafeCommandStore;
+import accord.messages.ReadData.ReadNack;
 import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
+import accord.topology.Topologies;
+import accord.utils.Invariants;
+import javax.annotation.Nullable;
 
 import static accord.messages.MessageType.READ_RSP;
 import static accord.messages.TxnRequest.computeScope;
@@ -43,7 +43,7 @@ import static accord.messages.TxnRequest.computeWaitForEpoch;
 import static accord.messages.TxnRequest.latestRelevantEpochIndex;
 
 // TODO (required, efficiency): dedup - can currently have infinite pending reads that will be executed independently
-public abstract class ReadData extends AbstractEpochRequest<ReadData.ReadNack>
+public abstract class ReadData extends AbstractEpochRequest<ReadNack>
 {
     private static final Logger logger = LoggerFactory.getLogger(ReadData.class);
 

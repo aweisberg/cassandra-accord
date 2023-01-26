@@ -18,13 +18,15 @@
 
 package accord.local;
 
-import accord.utils.DeterministicIdentitySet;
-
 import java.util.Collection;
 import java.util.function.Predicate;
 
+import accord.utils.DeterministicIdentitySet;
+
 public class Listeners<L extends Command.Listener> extends DeterministicIdentitySet<L>
 {
+    public static Listeners EMPTY = new Listeners<>();
+
     public Listeners()
     {
     }
@@ -34,7 +36,7 @@ public class Listeners<L extends Command.Listener> extends DeterministicIdentity
         super(copy);
     }
 
-    public static class Immutable extends Listeners<Command.DurableAndIdempotentListener>
+    public static class Immutable<L extends Command.Listener> extends Listeners<L>
     {
         public static final Immutable EMPTY = new Immutable();
 
@@ -43,18 +45,18 @@ public class Listeners<L extends Command.Listener> extends DeterministicIdentity
             super();
         }
 
-        public Immutable(Listeners<Command.DurableAndIdempotentListener> listeners)
+        public Immutable(Listeners<L> listeners)
         {
             super(listeners);
         }
 
-        Listeners<Command.DurableAndIdempotentListener> mutable()
+        Listeners<L> mutable()
         {
             return new Listeners<>(this);
         }
 
         @Override
-        public boolean add(Command.DurableAndIdempotentListener item)
+        public boolean add(L item)
         {
             throw new UnsupportedOperationException("Cannot modify immutable set");
         }
@@ -72,7 +74,7 @@ public class Listeners<L extends Command.Listener> extends DeterministicIdentity
         }
 
         @Override
-        public boolean addAll(Collection<? extends Command.DurableAndIdempotentListener> c)
+        public boolean addAll(Collection<? extends L> c)
         {
             throw new UnsupportedOperationException("Cannot modify immutable set");
         }
@@ -84,9 +86,36 @@ public class Listeners<L extends Command.Listener> extends DeterministicIdentity
         }
 
         @Override
-        public boolean removeIf(Predicate<? super Command.DurableAndIdempotentListener> filter)
+        public boolean removeIf(Predicate<? super L> filter)
         {
             throw new UnsupportedOperationException("Cannot modify immutable set");
+        }
+    }
+
+    public static class ImmutableDurable extends Immutable<Command.DurableAndIdempotentListener>
+    {
+        public static final ImmutableDurable EMPTY = new ImmutableDurable();
+    }
+
+    public static class ImmutableTransient extends Immutable<Command.TransientListener>
+    {
+        public static final ImmutableTransient EMPTY = new ImmutableTransient();
+
+        public ImmutableTransient()
+        {
+            super();
+        }
+
+        public ImmutableTransient(Listeners<Command.TransientListener> listeners)
+        {
+            super(listeners);
+        }
+
+        public ImmutableTransient copyOf(Listeners<Command.TransientListener> listeners)
+        {
+            if (listeners instanceof ImmutableTransient)
+                return (ImmutableTransient)listeners;
+            return new ImmutableTransient(listeners);
         }
     }
 }

@@ -24,8 +24,8 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
-import javax.annotation.Nullable;
 
+import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableSortedMap;
 
 import accord.api.Key;
@@ -36,6 +36,7 @@ import accord.local.Status;
 import accord.primitives.Seekable;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
+import javax.annotation.Nullable;
 
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestDep.WITH;
@@ -117,6 +118,16 @@ public class CommandTimeseries<D>
                            @Nullable Status minStatus, @Nullable Status maxStatus,
                            SafeCommandStore.CommandFunction<T, T> map, T initialValue, T terminalValue)
     {
+        return mapReduce(testKind, testTimestamp, timestamp,
+                         testDep, depId,
+                         minStatus, maxStatus,
+                         map, initialValue, Predicates.equalTo(terminalValue));
+    }
+    public <T> T mapReduce(SafeCommandStore.TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
+                           SafeCommandStore.TestDep testDep, @Nullable TxnId depId,
+                           @Nullable Status minStatus, @Nullable Status maxStatus,
+                           SafeCommandStore.CommandFunction<T, T> map, T initialValue, Predicate<T> terminatePredicate)
+    {
 
         for (D data : (testTimestamp == TestTimestamp.BEFORE ? commands.headMap(timestamp, false) : commands.tailMap(timestamp, false)).values())
         {
@@ -132,8 +143,8 @@ public class CommandTimeseries<D>
             if (testDep != ANY_DEPS && (!status.known.deps.hasProposedOrDecidedDeps() || (deps.contains(depId) != (testDep == WITH))))
                 continue;
             Timestamp executeAt = loader.executeAt(data);
-            initialValue = map.apply(keyOrRange, txnId, executeAt, initialValue);
-            if (initialValue.equals(terminalValue))
+            initialValue = map.apply(keyOrRange, txnId, executeAt, status.status, initialValue);
+            if (terminatePredicate.test(initialValue))
                 break;
         }
         return initialValue;

@@ -23,6 +23,14 @@ import accord.api.Scheduler;
 import accord.impl.InMemoryCommandStores;
 import accord.impl.IntKey;
 import accord.impl.SimpleProgressLog;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+
+import com.google.common.collect.Sets;
+
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.TestAgent;
 import accord.impl.mock.MockCluster;
@@ -31,7 +39,11 @@ import accord.local.ShardDistributor;
 import accord.primitives.Range;
 import accord.local.Node;
 import accord.impl.mock.MockStore;
+import accord.local.Node;
+import accord.primitives.Keys;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
+import accord.primitives.Txn;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
@@ -47,6 +59,8 @@ import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import org.awaitility.Awaitility;
+import org.awaitility.core.ThrowingRunnable;
 
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
@@ -151,5 +165,20 @@ public class Utils
                              InMemoryCommandStores.Synchronized::new);
         awaitUninterruptibly(node.start());
         return node;
+    }
+
+    public static void spinUntilSuccess(ThrowingRunnable runnable)
+    {
+        spinUntilSuccess(runnable, 10);
+    }
+
+    public static void spinUntilSuccess(ThrowingRunnable runnable, int timeoutInSeconds)
+    {
+        Awaitility.await()
+                  .pollInterval(Duration.ofMillis(100))
+                  .pollDelay(0, TimeUnit.MILLISECONDS)
+                  .atMost(timeoutInSeconds, TimeUnit.SECONDS)
+                  .ignoreExceptions()
+                  .untilAsserted(runnable);
     }
 }
