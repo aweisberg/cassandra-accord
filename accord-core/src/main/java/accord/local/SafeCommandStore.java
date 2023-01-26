@@ -18,7 +18,9 @@
 
 package accord.local;
 
+import java.util.Iterator;
 import java.util.function.Predicate;
+import javax.annotation.Nullable;
 
 import accord.api.Agent;
 import accord.api.DataStore;
@@ -33,8 +35,6 @@ import accord.primitives.Timestamp;
 import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.primitives.Unseekables;
-
-import javax.annotation.Nullable;
 
 import static accord.local.Commands.Truncate.NO;
 import static accord.local.SaveStatus.Uninitialised;
@@ -52,7 +52,7 @@ public abstract class SafeCommandStore
 {
     public interface CommandFunction<I, O>
     {
-        O apply(Seekable keyOrRange, TxnId txnId, Timestamp executeAt, I in);
+        O apply(Seekable keyOrRange, TxnId txnId, Timestamp executeAt, Status status, I in);
     }
 
     public enum TestTimestamp
@@ -197,10 +197,15 @@ public abstract class SafeCommandStore
      * Visits keys first and then ranges, both in ascending order.
      * Within each key or range visits TxnId in ascending order of queried timestamp.
      */
-    public abstract <T> T mapReduce(Seekables<?, ?> keys, Ranges slice,
+    public abstract <T> T mapReduceWithTerminate(Seekables<?, ?> keysOrRanges, Ranges slice,
+                       TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
+                       TestDep testDep, @Nullable TxnId depId,
+                       @Nullable Status minStatus, @Nullable Status maxStatus,
+                       CommandFunction<T, T> map, T accumulate, Predicate<T> terminate);
+    public abstract <T> T mapReduce(Seekables<?, ?> keysOrRanges, Ranges slice,
                     TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp,
                     TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus,
-                    CommandFunction<T, T> map, T initialValue, T terminalValue);
+                    CommandFunction<T, T> map, T accumulate, T terminalValue);
 
     protected abstract void register(Seekables<?, ?> keysOrRanges, Ranges slice, Command command);
     protected abstract void register(Seekable keyOrRange, Ranges slice, Command command);
@@ -228,11 +233,19 @@ public abstract class SafeCommandStore
     public void notifyListeners(SafeCommand safeCommand)
     {
         Command command = safeCommand.current();
-        for (Command.DurableAndIdempotentListener listener : command.durableListeners())
+        Iterator<Command.DurableAndIdempotentListener> durableIterator = command.durableListeners().reverseIterator();
+        while (durableIterator.hasNext())
+        {
+            Command.DurableAndIdempotentListener listener = durableIterator.next();
             notifyListener(this, safeCommand, command, listener);
+        }
 
-        for (Command.TransientListener listener : safeCommand.transientListeners())
+        Iterator<Command.TransientListener> transientIterator = safeCommand.transientListeners().reverseIterator();
+        while (transientIterator.hasNext())
+        {
+            Command.TransientListener listener = transientIterator.next();
             notifyListener(this, safeCommand, command, listener);
+        }
     }
 
     public static void notifyListener(SafeCommandStore safeStore, SafeCommand safeCommand, Command command, Command.TransientListener listener)

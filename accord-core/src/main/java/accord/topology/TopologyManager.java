@@ -18,22 +18,31 @@
 
 package accord.topology;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Function;
+
+import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.api.RoutingKey;
 import accord.api.TopologySorter;
 import accord.coordinate.tracking.QuorumTracker;
 import accord.local.CommandStore;
 import accord.local.Node.Id;
-import accord.primitives.*;
+import accord.primitives.Ranges;
+import accord.primitives.Timestamp;
+import accord.primitives.Unseekables;
 import accord.topology.Topologies.Single;
-import com.google.common.annotations.VisibleForTesting;
 import accord.utils.Invariants;
-import accord.utils.async.*;
-
-import java.util.*;
-import java.util.function.Function;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 
 import static accord.coordinate.tracking.RequestStatus.Success;
-
 import static accord.primitives.Routables.Slice.Minimal;
 import static accord.utils.Invariants.checkArgument;
 import static accord.utils.Invariants.nonNull;
@@ -53,6 +62,9 @@ import static accord.utils.Invariants.nonNull;
  */
 public class TopologyManager
 {
+    @SuppressWarnings("unused")
+    private static final Logger logger = LoggerFactory.getLogger(TopologyManager.class);
+
     private static final AsyncResult<Void> SUCCESS = AsyncResults.success(null);
     static class EpochState
     {

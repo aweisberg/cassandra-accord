@@ -33,11 +33,6 @@ public abstract class WaitAndReadData extends WaitUntilApplied
     }
 
     @Override
-    protected void cancel()
-    {
-    }
-
-    @Override
     protected long executeAtEpoch()
     {
         return executeAtEpoch;
