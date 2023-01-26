@@ -20,29 +20,37 @@ package accord.messages;
 
 import java.util.Collections;
 import java.util.Objects;
-
-import accord.local.*;
-import accord.local.SafeCommandStore.TestKind;
-
-import accord.local.Node.Id;
-import accord.messages.TxnRequest.WithUnsynced;
-import accord.topology.Topologies;
-import accord.primitives.Timestamp;
 import javax.annotation.Nullable;
 
-import accord.primitives.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import accord.local.Command;
+import accord.local.Commands;
+import accord.local.Node.Id;
+import accord.local.SafeCommandStore;
+import accord.local.SafeCommandStore.TestKind;
+import accord.messages.TxnRequest.WithUnsynced;
+import accord.primitives.Deps;
+import accord.primitives.FullRoute;
+import accord.primitives.PartialDeps;
+import accord.primitives.PartialRoute;
+import accord.primitives.PartialTxn;
+import accord.primitives.Ranges;
+import accord.primitives.Seekables;
+import accord.primitives.Timestamp;
+import accord.primitives.Txn;
 import accord.primitives.TxnId;
+import accord.topology.Topologies;
 
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
-import static accord.local.SafeCommandStore.TestKind.Any;
-import static accord.local.SafeCommandStore.TestKind.RorWs;
-import static accord.local.SafeCommandStore.TestKind.Ws;
 import static accord.local.SafeCommandStore.TestTimestamp.STARTED_BEFORE;
-import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 
 public class PreAccept extends WithUnsynced<PreAccept.PreAcceptReply>
 {
+    @SuppressWarnings("unused")
+    private static final Logger logger = LoggerFactory.getLogger(PreAccept.class);
+
     public static class SerializerSupport
     {
         public static PreAccept create(TxnId txnId, PartialRoute<?> scope, long waitForEpoch, long minEpoch, boolean doNotComputeProgressKey, long maxEpoch, PartialTxn partialTxn, @Nullable FullRoute<?> fullRoute)
@@ -233,7 +241,7 @@ public class PreAccept extends WithUnsynced<PreAccept.PreAcceptReply>
         // could use MAY_EXECUTE_BEFORE to prune those we know execute later, but shouldn't usually be of much help
         // and would need to supply !hasOrderedTxnId
         commandStore.mapReduce(keys, ranges, testKind, STARTED_BEFORE, executeAt, ANY_DEPS, null, null, null,
-                (keyOrRange, testTxnId, testExecuteAt, in) -> {
+                (keyOrRange, testTxnId, testExecuteAt, saveStatus, in) -> {
                     // TODO (easy, efficiency): either pass txnId as parameter or encode this behaviour in a specialised builder to avoid extra allocations
                     if (!testTxnId.equals(txnId))
                         in.add(keyOrRange, testTxnId);
