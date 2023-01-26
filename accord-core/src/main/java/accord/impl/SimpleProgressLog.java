@@ -24,6 +24,10 @@ import java.util.TreeMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import javax.annotation.Nullable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.ProgressLog;
 import accord.coordinate.FetchData;
@@ -36,6 +40,7 @@ import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
+
 import accord.local.SaveStatus.LocalExecution;
 import accord.local.Status;
 import accord.local.Status.Known;
@@ -50,7 +55,6 @@ import accord.utils.IntrusiveLinkedListNode;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
-import javax.annotation.Nullable;
 
 import static accord.api.ProgressLog.ProgressShard.Unsure;
 import static accord.coordinate.InformHomeOfTxn.inform;
@@ -73,7 +77,11 @@ import static accord.local.Status.PreCommitted;
 // TODO (expected): report long-lived recurring transactions / operations
 public class SimpleProgressLog implements ProgressLog.Factory
 {
+    private static final Logger logger = LoggerFactory.getLogger(SimpleProgressLog.class);
+
     enum Progress { NoneExpected, Expected, NoProgress, Investigating, Done }
+
+    public static volatile boolean PAUSE_FOR_TEST = false;
 
     enum CoordinateStatus
     {
@@ -688,6 +696,12 @@ public class SimpleProgressLog implements ProgressLog.Factory
             isScheduled = false;
             try
             {
+                if (PAUSE_FOR_TEST)
+                {
+                    logger.info("Skipping progress log because it is paused for test");
+                    return;
+                }
+
                 for (State.Monitoring run : this)
                 {
                     if (run.shouldRun())
