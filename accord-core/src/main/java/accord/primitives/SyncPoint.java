@@ -29,25 +29,27 @@ import accord.utils.Invariants;
  * so while these are processed much like a transaction, they are invisible to real transactions which
  * may proceed before this is witnessed by the node processing it.
  */
-public class SyncPoint
+public class SyncPoint<S extends Seekables<?, ?>>
 {
     public final TxnId syncId;
     public final Deps waitFor;
-    public final Ranges ranges;
+    public final S keysOrRanges;
     public final RoutingKey homeKey;
+    public final boolean finishedAsync;
 
-    public SyncPoint(TxnId syncId, Deps waitFor, Ranges ranges, FullRangeRoute route)
+    public SyncPoint(TxnId syncId, Deps waitFor, S keysOrRanges, FullRoute route, boolean finishedAsync)
     {
-        Invariants.checkArgument(ranges.toRoute(route.homeKey).equals(route));
+        Invariants.checkArgument(keysOrRanges.toRoute(route.homeKey()).equals(route));
         this.syncId = syncId;
         this.waitFor = waitFor;
-        this.ranges = ranges;
+        this.keysOrRanges = keysOrRanges;
         this.homeKey = route.homeKey();
+        this.finishedAsync = finishedAsync;
     }
 
-    public FullRangeRoute route()
+    public FullRoute route()
     {
-        return ranges.toRoute(homeKey);
+        return keysOrRanges.toRoute(homeKey);
     }
 
     public long sourceEpoch()
