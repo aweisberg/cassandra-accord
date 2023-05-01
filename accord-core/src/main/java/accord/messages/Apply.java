@@ -18,16 +18,27 @@
 
 package accord.messages;
 
-import accord.local.SafeCommandStore;
-import accord.local.*;
-import accord.primitives.*;
-import accord.local.Node.Id;
-import accord.api.Result;
-import accord.topology.Topologies;
+import java.util.Collections;
+import java.util.concurrent.RejectedExecutionException;
+
 import com.google.common.collect.Iterables;
 
-import java.util.Collections;
+import accord.api.Result;
+import accord.local.Commands;
+import accord.local.Node.Id;
+import accord.local.SafeCommandStore;
 import accord.messages.Apply.ApplyReply;
+import accord.primitives.Deps;
+import accord.primitives.PartialDeps;
+import accord.primitives.PartialRoute;
+import accord.primitives.Ranges;
+import accord.primitives.Route;
+import accord.primitives.Seekables;
+import accord.primitives.Timestamp;
+import accord.primitives.Txn;
+import accord.primitives.TxnId;
+import accord.primitives.Writes;
+import accord.topology.Topologies;
 
 import static accord.local.PreLoadContext.empty;
 import static accord.messages.MessageType.APPLY_REQ;
@@ -50,6 +61,7 @@ public class Apply extends TxnRequest<ApplyReply>
     public final Writes writes;
     public final Result result;
 
+    // TODO anyone sending apply needs to be updated to respect dataCL for commit consistency
     public Apply(Id to, Topologies sendTo, Topologies applyTo, long untilEpoch, TxnId txnId, Route<?> route, Txn txn, Timestamp executeAt, Deps deps, Writes writes, Result result)
     {
         super(to, sendTo, route, txnId);
@@ -62,7 +74,6 @@ public class Apply extends TxnRequest<ApplyReply>
         this.writes = writes;
         this.result = result;
     }
-
     private Apply(TxnId txnId, PartialRoute<?> route, long waitForEpoch, long untilEpoch, Seekables<?, ?> keys, Timestamp executeAt, PartialDeps deps, Writes writes, Result result)
     {
         super(txnId, route, waitForEpoch);
@@ -105,6 +116,11 @@ public class Apply extends TxnRequest<ApplyReply>
     @Override
     public void accept(ApplyReply reply, Throwable failure)
     {
+        //TODO failure is ignored here
+        if (failure != null && !(failure instanceof RejectedExecutionException))
+        {
+            failure.printStackTrace();
+        }
         if (reply == ApplyReply.Applied)
         {
             node.ifLocal(empty(), scope.homeKey(), txnId.epoch(), instance -> {

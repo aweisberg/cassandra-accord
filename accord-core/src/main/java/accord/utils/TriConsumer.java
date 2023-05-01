@@ -16,21 +16,9 @@
  * limitations under the License.
  */
 
-package accord.coordinate.tracking;
+package accord.utils;
 
-import accord.primitives.DataConsistencyLevel;
-import accord.topology.Shard;
-
-public abstract class ShardTracker
+public interface TriConsumer<P1, P2, P3>
 {
-    public final Shard shard;
-    // TODO if ReadTracker.ReadShardTracker were no longer static it could get the dataCL from ReadTracker
-    // but going forward more cases like commit consistency might need it?
-    public final DataConsistencyLevel dataCL;
-
-    public ShardTracker(Shard shard, DataConsistencyLevel dataCL)
-    {
-        this.shard = shard;
-        this.dataCL = dataCL;
-    }
+    void consume(P1 p1, P2 p2, P3 p3);
 }

@@ -18,15 +18,27 @@
 
 package accord.api;
 
+import accord.local.Node.Id;
+import accord.messages.Callback;
+import accord.primitives.Timestamp;
+import accord.utils.async.AsyncChain;
+
 /**
- * The result of having read from some nodes and then resolving differences in any data
- * not written by Accord, or the result computed by a txn.
+ * Process the result of Accord having performed a read and merge the results
+ * producing any repair writes necessary for the read to be monotonic.
+ *
+ * May repeat the read in order to produce the repair writes.
  */
-public interface Data
+public interface DataResolver
 {
     /**
-     * Combine the contents of the parameter with this object and return the resultant object.
-     * This method may modify the current object and return itself.
+     * Allow the resolver to request additional or redundant/repeated data reads from specific nodes
+     * in order to support things like read repair and short read protection.
      */
-    Data merge(Data data);
+    interface FollowupReader
+    {
+        void read(Read read, Id id, Callback<UnresolvedData> callback);
+    }
+
+    AsyncChain<ResolveResult> resolve(Timestamp executeAt, Read read, UnresolvedData unresolvedData, FollowupReader followUpReader);
 }

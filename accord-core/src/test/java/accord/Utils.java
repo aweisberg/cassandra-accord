@@ -29,6 +29,7 @@ import com.google.common.collect.Sets;
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.mock.MockStore;
 import accord.local.Node;
+import accord.primitives.DataConsistencyLevel;
 import accord.primitives.Keys;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
@@ -90,17 +91,21 @@ public class Utils
 
     public static Txn writeTxn(Keys keys)
     {
-        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.QUERY, MockStore.update(keys));
+        return writeTxn(keys, DataConsistencyLevel.UNSPECIFIED);
     }
 
+    public static Txn writeTxn(Keys keys, DataConsistencyLevel writeDataCL)
+    {
+        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.RESOLVER, MockStore.QUERY, MockStore.update(keys, writeDataCL));
+    }
     public static Txn writeTxn(Ranges ranges)
     {
-        return new Txn.InMemory(ranges, MockStore.read(ranges), MockStore.QUERY, MockStore.update(ranges));
+        return new Txn.InMemory(ranges, MockStore.read(ranges), MockStore.RESOLVER, MockStore.QUERY, MockStore.update(ranges));
     }
 
     public static Txn readTxn(Keys keys)
     {
-        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.QUERY);
+        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.RESOLVER, MockStore.QUERY);
     }
 
     public static Shard shard(Range range, List<Node.Id> nodes, Set<Node.Id> fastPath)

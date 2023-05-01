@@ -23,11 +23,12 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-import accord.api.Key;
 import accord.api.Data;
+import accord.api.Key;
+import accord.api.RepairWrites;
 import accord.api.Update;
-import accord.primitives.Ranges;
 import accord.primitives.Keys;
+import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 
 public class ListUpdate extends TreeMap<Key, Integer> implements Update
@@ -39,12 +40,17 @@ public class ListUpdate extends TreeMap<Key, Integer> implements Update
     }
 
     @Override
-    public ListWrite apply(Data read)
+    public ListWrite apply(Data read, RepairWrites repairWrites)
     {
         ListWrite write = new ListWrite();
+
+        if (repairWrites != null)
+            ((ListWrite) repairWrites).entrySet().forEach(e -> write.put(e.getKey(), e.getValue()));
+
         Map<Key, int[]> data = (ListData)read;
         for (Map.Entry<Key, Integer> e : entrySet())
             write.put(e.getKey(), append(data.get(e.getKey()), e.getValue()));
+
         return write;
     }
 

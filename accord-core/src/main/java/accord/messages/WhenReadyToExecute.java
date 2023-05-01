@@ -28,7 +28,7 @@ import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
+import accord.api.UnresolvedData;
 import accord.local.Command;
 import accord.local.CommandListener;
 import accord.local.CommandStore;
@@ -229,12 +229,15 @@ public abstract class WhenReadyToExecute extends AbstractEpochRequest<WhenReadyT
     @Override
     public synchronized void accept(ExecuteNack reply, Throwable failure)
     {
+        if (failure != null)
+            failure.printStackTrace();
         if (reply != null)
         {
             node.reply(replyTo, replyContext, reply);
         }
         else if (failure != null)
         {
+            logger.warn("Error executing", failure);
             // TODO (expected, testing): test
             node.reply(replyTo, replyContext, ExecuteNack.Error);
             failed();
@@ -338,17 +341,17 @@ public abstract class WhenReadyToExecute extends AbstractEpochRequest<WhenReadyT
 
     public static class ExecuteOk implements ExecuteReply
     {
-        public final @Nullable Data data;
+        public final @Nullable UnresolvedData unresolvedData;
 
-        public ExecuteOk(@Nullable Data data)
+        public ExecuteOk(@Nullable UnresolvedData unresolvedData)
         {
-            this.data = data;
+            this.unresolvedData = unresolvedData;
         }
 
         @Override
         public String toString()
         {
-            return "ExecuteOk{" + data + '}';
+            return "ExecuteOk{" + unresolvedData + '}';
         }
 
         @Override

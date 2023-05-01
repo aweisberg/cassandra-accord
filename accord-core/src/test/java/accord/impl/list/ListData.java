@@ -19,17 +19,25 @@
 package accord.impl.list;
 
 import java.util.Arrays;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import accord.api.Data;
+import accord.api.DataResolver;
 import accord.api.Key;
+import accord.api.Read;
+import accord.api.ResolveResult;
+import accord.api.UnresolvedData;
+import accord.primitives.Timestamp;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
-public class ListData extends TreeMap<Key, int[]> implements Data
+public class ListData extends TreeMap<Key, int[]> implements Data, UnresolvedData, DataResolver
 {
+    public static final ListData EMPTY = new ListData();
+
     @Override
-    public Data merge(Data data)
+    public ListData merge(Data data)
     {
         if (data != null)
             this.putAll(((ListData)data));
@@ -42,5 +50,17 @@ public class ListData extends TreeMap<Key, int[]> implements Data
         return entrySet().stream()
                          .map(e -> e.getKey() + "=" + Arrays.toString(e.getValue()))
                          .collect(Collectors.joining(", ", "{", "}"));
+    }
+
+    @Override
+    public UnresolvedData merge(UnresolvedData unresolvedData)
+    {
+        return merge((Data)unresolvedData);
+    }
+
+    @Override
+    public AsyncChain<ResolveResult> resolve(Timestamp executeAt, Read read, UnresolvedData unresolvedData, FollowupReader followUpReader)
+    {
+        return AsyncChains.success(new ResolveResult((ListData)unresolvedData, ListWrite.EMPTY));
     }
 }
