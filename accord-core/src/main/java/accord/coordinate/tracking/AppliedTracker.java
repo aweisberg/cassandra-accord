@@ -21,12 +21,14 @@ package accord.coordinate.tracking;
 import java.util.Set;
 
 import accord.local.Node;
+import accord.primitives.DataConsistencyLevel;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 
 import static accord.coordinate.tracking.AbstractTracker.ShardOutcomes.Fail;
 import static accord.coordinate.tracking.AbstractTracker.ShardOutcomes.NoChange;
 import static accord.coordinate.tracking.AbstractTracker.ShardOutcomes.Success;
+import static accord.utils.Invariants.checkArgument;
 
 public class AppliedTracker extends AbstractTracker<AppliedTracker.AppliedShardTracker>
 {
@@ -34,9 +36,10 @@ public class AppliedTracker extends AbstractTracker<AppliedTracker.AppliedShardT
     {
         protected int waitingOn;
 
-        public AppliedShardTracker(Shard shard, Set<Node.Id> nonParticipants)
+        public AppliedShardTracker(Shard shard, Set<Node.Id> nonParticipants, DataConsistencyLevel dataConsistencyLevel)
         {
-            super(shard);
+            super(shard, dataConsistencyLevel);
+            checkArgument(dataConsistencyLevel == DataConsistencyLevel.INVALID);
             waitingOn = shard.rf() - (nonParticipants.isEmpty() ? 0 : (int)shard.nodes.stream().filter(nonParticipants::contains).count());
         }
 
@@ -77,7 +80,7 @@ public class AppliedTracker extends AbstractTracker<AppliedTracker.AppliedShardT
 
     public AppliedTracker(Topologies topologies, Set<Node.Id> nonParticipants)
     {
-        super(topologies, AppliedShardTracker[]::new, shard -> new AppliedShardTracker(shard, nonParticipants));
+        super(topologies, DataConsistencyLevel.INVALID, AppliedShardTracker[]::new, (shard, dataCL) -> new AppliedShardTracker(shard, nonParticipants, dataCL));
     }
 
     public RequestStatus recordSuccess(Node.Id node)

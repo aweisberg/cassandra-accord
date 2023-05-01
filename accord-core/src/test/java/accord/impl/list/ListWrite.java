@@ -28,17 +28,21 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.DataStore;
 import accord.api.Key;
+import accord.api.RepairWrites;
 import accord.api.Write;
 import accord.local.CommandStore;
 import accord.local.SafeCommandStore;
+import accord.primitives.Keys;
 import accord.primitives.Seekable;
+import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Writes;
 import accord.utils.Timestamped;
 import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncExecutor;
 
-public class ListWrite extends TreeMap<Key, int[]> implements Write
+public class ListWrite extends TreeMap<Key, int[]> implements Write, RepairWrites
 {
     private static final Logger logger = LoggerFactory.getLogger(ListWrite.class);
 
@@ -47,6 +51,30 @@ public class ListWrite extends TreeMap<Key, int[]> implements Write
     public ListWrite(Function<? super CommandStore, AsyncExecutor> executor)
     {
         this.executor = executor;
+    }
+
+    private ListWrite()
+    {
+        this.executor = null;
+    }
+
+    public static final ListWrite EMPTY = new ListWrite() {
+        @Override
+        public AsyncChain<Void> apply(Seekable key, SafeCommandStore commandStore, Timestamp executeAt, DataStore store)
+        {
+            return AsyncChains.success(null);
+        }
+    };
+
+    public Seekables<?, ?> keys()
+    {
+        return Keys.of(keySet());
+    }
+
+    @Override
+    public Write toWrite()
+    {
+        return this;
     }
 
     @Override

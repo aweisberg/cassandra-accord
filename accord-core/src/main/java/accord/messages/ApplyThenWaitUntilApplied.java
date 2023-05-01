@@ -21,9 +21,9 @@ package accord.messages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
 import accord.api.Result;
 import accord.api.RoutingKey;
+import accord.api.UnresolvedData;
 import accord.local.CommandStore;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommandStore;
@@ -99,7 +99,7 @@ public class ApplyThenWaitUntilApplied extends WaitUntilApplied
     }
 
     @Override
-    protected void readComplete(CommandStore commandStore, Data readResult, Ranges unavailable)
+    protected void readComplete(CommandStore commandStore, UnresolvedData readResult, Ranges unavailable)
     {
         logger.trace("{}: readComplete ApplyThenWaitUntilApplied", txnId);
         commandStore.execute(PreLoadContext.contextFor(txnId), safeStore -> {

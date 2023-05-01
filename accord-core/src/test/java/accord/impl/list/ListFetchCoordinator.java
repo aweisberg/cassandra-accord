@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-import accord.api.Data;
 import accord.api.DataStore;
+import accord.api.UnresolvedData;
 import accord.impl.AbstractFetchCoordinator;
 import accord.local.CommandStore;
 import accord.local.Node;
@@ -49,16 +49,16 @@ public class ListFetchCoordinator extends AbstractFetchCoordinator
     @Override
     protected PartialTxn rangeReadTxn(Ranges ranges)
     {
-        return new PartialTxn.InMemory(ranges, Txn.Kind.Read, ranges, new ListRead(Function.identity(), ranges, ranges), new ListQuery(Node.Id.NONE, Long.MIN_VALUE), null);
+        return new PartialTxn.InMemory(ranges, Txn.Kind.Read, ranges, new ListRead(Function.identity(), ranges, ranges), ListData.resolver(), new ListQuery(Node.Id.NONE, Long.MIN_VALUE), null);
     }
 
     @Override
-    protected void onReadOk(Node.Id from, CommandStore commandStore, Data data, Ranges received)
+    protected void onReadOk(Node.Id from, CommandStore commandStore, UnresolvedData unresolvedData, Ranges received)
     {
-        if (data == null)
+        if (unresolvedData == null)
             return;
 
-        ListData listData = (ListData) data;
+        ListData listData = (ListData) unresolvedData;
         persisting.add(commandStore.execute(PreLoadContext.empty(), safeStore -> {
             listData.forEach((key, value) -> listStore.data.merge(key, value, Timestamped::merge));
         }).addCallback((ignore, fail) -> {

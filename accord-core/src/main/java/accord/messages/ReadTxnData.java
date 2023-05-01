@@ -21,7 +21,8 @@ package accord.messages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
+import accord.api.Read;
+import accord.api.UnresolvedData;
 import accord.local.Command;
 import accord.local.CommandStore;
 import accord.local.Node;
@@ -33,6 +34,7 @@ import accord.local.Status;
 import accord.primitives.EpochSupplier;
 import accord.primitives.Participants;
 import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
@@ -50,9 +52,9 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
 
     public static class SerializerSupport
     {
-        public static ReadTxnData create(TxnId txnId, Participants<?> scope, long executeAtEpoch, long waitForEpoch)
+        public static ReadTxnData create(TxnId txnId, Participants<?> scope, long executeAtEpoch, long waitForEpoch, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
         {
-            return new ReadTxnData(txnId, scope, executeAtEpoch, waitForEpoch);
+            return new ReadTxnData(txnId, scope, executeAtEpoch, waitForEpoch, dataReadKeys, followupRead);
         }
     }
 
@@ -85,15 +87,15 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
     final ObsoleteTracker obsoleteTracker = new ObsoleteTracker();
     private transient State state = State.PENDING; // TODO (low priority, semantics): respond with the Executed result we have stored?
 
-    public ReadTxnData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt)
+    public ReadTxnData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, Timestamp executeAt, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
     {
-        super(to, topologies, txnId, readScope);
+        super(to, topologies, txnId, readScope, dataReadKeys, followupRead);
         this.executeAtEpoch = executeAt.epoch();
     }
 
-    protected ReadTxnData(TxnId txnId, Participants<?> readScope, long executeAtEpoch, long waitForEpoch)
+    protected ReadTxnData(TxnId txnId, Participants<?> readScope, long executeAtEpoch, long waitForEpoch, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
     {
-        super(txnId, readScope, waitForEpoch);
+        super(txnId, readScope, waitForEpoch, dataReadKeys, followupRead);
         this.executeAtEpoch = executeAtEpoch;
     }
 
@@ -236,7 +238,7 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
     }
 
     @Override
-    protected synchronized void readComplete(CommandStore commandStore, @Nullable Data result, @Nullable Ranges unavailable)
+    protected synchronized void readComplete(CommandStore commandStore, @Nullable UnresolvedData result, @Nullable Ranges unavailable)
     {
         // TODO (expected): lots of undesirable costs associated with the obsoletion tracker
 //        commandStore.execute(contextFor(txnId), safeStore -> safeStore.command(txnId).removeListener(obsoleteTracker));
@@ -244,7 +246,7 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
     }
 
     @Override
-    protected void reply(@Nullable Ranges unavailable, @Nullable Data data)
+    protected void reply(@Nullable Ranges unavailable, @Nullable UnresolvedData unresolvedData)
     {
         switch (state)
         {
@@ -255,7 +257,7 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
                 break;
             case PENDING:
                 state = State.RETURNED;
-                node.reply(replyTo, replyContext, new ReadOk(unavailable, data));
+                node.reply(replyTo, replyContext, new ReadOk(unavailable, unresolvedData));
                 break;
             default:
                 throw new AssertionError("Unknown state: " + state);
@@ -282,8 +284,9 @@ public class ReadTxnData extends ReadData implements Command.TransientListener, 
     @Override
     public String toString()
     {
-        return "ReadData{" +
-               "txnId:" + txnId +
-               '}';
+        return "ReadTxnData{" +
+                "txnId:" + txnId +
+                ", dataReadKeys:" + dataReadKeys +
+                '}';
     }
 }

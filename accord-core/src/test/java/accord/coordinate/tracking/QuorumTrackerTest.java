@@ -18,15 +18,24 @@
 
 package accord.coordinate.tracking;
 
-import accord.impl.TopologyUtils;
-import accord.local.Node;
-import accord.primitives.Range;
-import accord.primitives.Ranges;
-import accord.topology.Topology;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static accord.Utils.*;
+import accord.api.ExternalTopology;
+import accord.impl.TopologyUtils;
+import accord.local.Node;
+import accord.primitives.DataConsistencyLevel;
+import accord.primitives.Range;
+import accord.primitives.Ranges;
+import accord.topology.Topology;
+
+import static accord.Utils.id;
+import static accord.Utils.idList;
+import static accord.Utils.idSet;
+import static accord.Utils.ids;
+import static accord.Utils.shard;
+import static accord.Utils.topologies;
+import static accord.Utils.topology;
 import static accord.impl.IntKey.range;
 import static accord.utils.Utils.toArray;
 
@@ -61,6 +70,22 @@ public class QuorumTrackerTest
 
         responses.recordSuccess(ids[1]);
         assertResponseState(responses, true, false, true);
+
+        responses.recordSuccess(ids[2]);
+        assertResponseState(responses, true, false, false);
+    }
+
+    @Test
+    void singleShardDataConsistencyLevelAll()
+    {
+        Topology subTopology = topology(topology.get(0));
+        QuorumTracker responses = new QuorumTracker(topologies(subTopology), DataConsistencyLevel.ALL);
+
+        responses.recordSuccess(ids[0]);
+        assertResponseState(responses, false, false, true);
+
+        responses.recordSuccess(ids[1]);
+        assertResponseState(responses, false, false, true);
 
         responses.recordSuccess(ids[2]);
         assertResponseState(responses, true, false, false);
@@ -103,9 +128,29 @@ public class QuorumTrackerTest
     }
 
     @Test
+    void failureDataConsistencyLevelALL()
+    {
+        Topology subTopology = topology(topology.get(0));
+        QuorumTracker responses = new QuorumTracker(topologies(subTopology), DataConsistencyLevel.ALL);
+
+        responses.recordSuccess(ids[0]);
+        assertResponseState(responses, false, false, true);
+
+        responses.recordSuccess(ids[1]);
+        assertResponseState(responses, false, false, true);
+
+        responses.recordFailure(ids[2]);
+        assertResponseState(responses, false, true, false);
+
+        responses = new QuorumTracker(topologies(subTopology), DataConsistencyLevel.ALL);
+        responses.recordFailure(ids[2]);
+        assertResponseState(responses, false, true, true);
+    }
+
+    @Test
     void multiShard()
     {
-        Topology subTopology = new Topology(1, topology.get(0), topology.get(1), topology.get(2));
+        Topology subTopology = new Topology(1, ExternalTopology.EMPTY, topology.get(0), topology.get(1), topology.get(2));
         QuorumTracker responses = new QuorumTracker(topologies(subTopology));
         /*
         (000, 100](100, 200](200, 300]

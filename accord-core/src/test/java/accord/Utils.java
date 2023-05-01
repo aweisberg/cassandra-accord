@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Sets;
 
+import accord.api.ExternalTopology;
 import accord.api.MessageSink;
 import accord.api.Scheduler;
 import accord.impl.InMemoryCommandStores;
@@ -38,6 +39,7 @@ import accord.impl.mock.MockConfigurationService;
 import accord.impl.mock.MockStore;
 import accord.local.Node;
 import accord.local.ShardDistributor;
+import accord.primitives.DataConsistencyLevel;
 import accord.primitives.Keys;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
@@ -104,17 +106,21 @@ public class Utils
 
     public static Txn writeTxn(Keys keys)
     {
-        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.QUERY, MockStore.update(keys));
+        return writeTxn(keys, DataConsistencyLevel.UNSPECIFIED);
     }
 
+    public static Txn writeTxn(Keys keys, DataConsistencyLevel writeDataCL)
+    {
+        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.RESOLVER, MockStore.QUERY, MockStore.update(keys, writeDataCL));
+    }
     public static Txn writeTxn(Ranges ranges)
     {
-        return new Txn.InMemory(ranges, MockStore.read(ranges), MockStore.QUERY, MockStore.update(ranges));
+        return new Txn.InMemory(ranges, MockStore.read(ranges), MockStore.RESOLVER, MockStore.QUERY, MockStore.update(ranges));
     }
 
     public static Txn readTxn(Keys keys)
     {
-        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.QUERY);
+        return new Txn.InMemory(keys, MockStore.read(keys), MockStore.RESOLVER, MockStore.QUERY);
     }
 
     public static Shard shard(Range range, List<Node.Id> nodes, Set<Node.Id> fastPath)
@@ -124,7 +130,7 @@ public class Utils
 
     public static Topology topology(long epoch, Shard... shards)
     {
-        return new Topology(epoch, shards);
+        return new Topology(epoch, ExternalTopology.EMPTY, shards);
     }
 
     public static Topology topology(Shard... shards)
@@ -139,7 +145,7 @@ public class Utils
 
     public static Node createNode(Node.Id nodeId, Topology topology, MessageSink messageSink, MockCluster.Clock clock)
     {
-        MockStore store = new MockStore();
+        MockStore store = new MockStore(nodeId);
         Scheduler scheduler = new ThreadPoolScheduler();
         Node node = new Node(nodeId,
                              messageSink,

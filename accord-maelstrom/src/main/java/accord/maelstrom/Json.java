@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutionException;
 
 import accord.api.Key;
 import accord.api.Result;
@@ -32,6 +33,7 @@ import accord.local.Node;
 import accord.local.Node.Id;
 import accord.messages.ReadData.ReadOk;
 import accord.primitives.Ballot;
+import accord.primitives.DataConsistencyLevel;
 import accord.primitives.Deps;
 import accord.primitives.KeyDeps;
 import accord.primitives.Keys;
@@ -48,6 +50,8 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+
+import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 public class Json
 {
@@ -321,7 +325,7 @@ public class Json
             MaelstromRead read = new MaelstromRead(readKeys, keys);
             MaelstromQuery query = new MaelstromQuery(client, requestId);
 
-            return new Txn.InMemory(keys, read, query, update);
+            return new Txn.InMemory(keys, read, MaelstromData.EMPTY, query, update);
         }
     };
 
@@ -439,6 +443,7 @@ public class Json
                 else append.write(out);
             }
             out.endArray();
+            out.name("writeDataCL").value(value.writeDataCL.toString());
             out.endObject();
         }
 
@@ -453,6 +458,7 @@ public class Json
             Timestamp executeAt = null;
             Keys keys = null;
             List<Value> writes = null;
+            DataConsistencyLevel writeDataCL = null;
             while (in.hasNext())
             {
                 switch (in.nextName())
@@ -474,6 +480,9 @@ public class Json
                             writes.add(Value.read(in));
                         in.endArray();
                         break;
+                    case "writeDataCL":
+                        writeDataCL = DataConsistencyLevel.valueOf(in.nextString());
+                        break;
                 }
             }
             in.endObject();
@@ -487,7 +496,7 @@ public class Json
                         write.put(keys.get(i), writes.get(i));
                 }
             }
-            return new Writes(txnId, executeAt, keys, write);
+            return new Writes(txnId, executeAt, keys, write, writeDataCL);
         }
     };
 
@@ -497,15 +506,22 @@ public class Json
         public void write(JsonWriter out, ReadOk value) throws IOException
         {
             out.beginArray();
-            if (value.data != null)
+            try
             {
-                for (Map.Entry<Key, Value> e : ((MaelstromData)value.data).entrySet())
+                if (value.unresolvedData != null)
                 {
-                    out.beginArray();
-                    ((MaelstromKey)e.getKey()).datum.write(out);
-                    e.getValue().write(out);
-                    out.endArray();
+                    for (Map.Entry<Key, Value> e : ((MaelstromData) getUninterruptibly(MaelstromData.EMPTY.resolve(null, null, null, value.unresolvedData, null)).data).entrySet())
+                    {
+                        out.beginArray();
+                        ((MaelstromKey) e.getKey()).datum.write(out);
+                        e.getValue().write(out);
+                        out.endArray();
+                    }
                 }
+            }
+            catch (ExecutionException e)
+            {
+                throw new IOException(e);
             }
             out.endArray();
         }

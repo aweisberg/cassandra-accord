@@ -18,19 +18,19 @@
 
 package accord.coordinate.tracking;
 
+import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.function.IntFunction;
+import java.util.function.Predicate;
+
+import com.google.common.annotations.VisibleForTesting;
+
 import accord.local.Node.Id;
+import accord.primitives.DataConsistencyLevel;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
-
 import accord.utils.Invariants;
-import com.google.common.annotations.VisibleForTesting;
-
-import java.util.*;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.IntFunction;
-import java.util.function.Predicate;
 
 import static accord.coordinate.tracking.AbstractTracker.ShardOutcomes.NoChange;
 
@@ -85,9 +85,9 @@ public abstract class AbstractTracker<ST extends ShardTracker>
     protected final int maxShardsPerEpoch;
     protected int waitingOnShards;
 
-    AbstractTracker(Topologies topologies, IntFunction<ST[]> arrayFactory, Function<Shard, ST> trackerFactory)
+    AbstractTracker(Topologies topologies, DataConsistencyLevel cl, IntFunction<ST[]> arrayFactory, BiFunction<Shard, DataConsistencyLevel, ST> trackerFactory)
     {
-        this(topologies, arrayFactory, (ignore, shard) -> trackerFactory.apply(shard));
+        this(topologies, arrayFactory, (ignore, shard) -> trackerFactory.apply(shard, cl));
     }
     AbstractTracker(Topologies topologies, IntFunction<ST[]> arrayFactory, ShardFactory<ST> trackerFactory)
     {

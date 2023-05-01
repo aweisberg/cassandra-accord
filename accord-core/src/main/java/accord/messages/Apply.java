@@ -18,6 +18,8 @@
 
 package accord.messages;
 
+import java.util.concurrent.RejectedExecutionException;
+
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.local.Commands;
@@ -157,6 +159,11 @@ public class Apply extends TxnRequest<ApplyReply>
     @Override
     public void accept(ApplyReply reply, Throwable failure)
     {
+        //TODO failure is ignored here
+        if (failure != null && !(failure instanceof RejectedExecutionException))
+        {
+            failure.printStackTrace();
+        }
         node.reply(replyTo, replyContext, reply);
     }
 

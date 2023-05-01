@@ -26,8 +26,8 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
 import accord.api.DataStore;
+import accord.api.UnresolvedData;
 import accord.coordinate.FetchCoordinator;
 import accord.local.CommandStore;
 import accord.local.Node;
@@ -118,7 +118,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
 
     protected abstract PartialTxn rangeReadTxn(Ranges ranges);
 
-    protected abstract void onReadOk(Node.Id from, CommandStore commandStore, Data data, Ranges ranges);
+    protected abstract void onReadOk(Node.Id from, CommandStore commandStore, UnresolvedData data, Ranges ranges);
 
     @Override
     public void contact(Node.Id to, Ranges ranges)
@@ -155,7 +155,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
                 if (ok.unavailable != null)
                 {
                     unavailable(to, ok.unavailable);
-                    if (ok.data == null)
+                    if (ok.unresolvedData == null)
                     {
                         inflight.remove(key).cancel();
                         return;
@@ -169,7 +169,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
 
                 // TODO (now): make sure it works if invoked in either order
                 inflight.remove(key).started(ok.maxApplied);
-                onReadOk(to, commandStore, ok.data, received);
+                onReadOk(to, commandStore, ok.unresolvedData, received);
                 // received must be invoked after submitting the persistence future, as it triggers onDone
                 // which creates a ReducingFuture over {@code persisting}
             }
@@ -230,7 +230,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         }
 
         @Override
-        protected void readComplete(CommandStore commandStore, Data result, Ranges unavailable)
+        protected void readComplete(CommandStore commandStore, UnresolvedData result, Ranges unavailable)
         {
             Ranges slice = commandStore.rangesForEpochHolder().get().allAt(txnId).subtract(unavailable);
             commandStore.maxAppliedFor((Ranges)readScope, slice).begin((newMaxApplied, failure) -> {
@@ -252,9 +252,9 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         }
 
         @Override
-        protected void reply(@Nullable Ranges unavailable, @Nullable Data data)
+        protected void reply(@Nullable Ranges unavailable, @Nullable UnresolvedData unresolvedData)
         {
-            node.reply(replyTo, replyContext, new FetchResponse(unavailable, data, maxApplied));
+            node.reply(replyTo, replyContext, new FetchResponse(unavailable, unresolvedData, maxApplied));
         }
 
         @Override
@@ -267,9 +267,9 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
     public static class FetchResponse extends ReadOk
     {
         public final Timestamp maxApplied;
-        public FetchResponse(@Nullable Ranges unavailable, @Nullable Data data, Timestamp maxApplied)
+        public FetchResponse(@Nullable Ranges unavailable, @Nullable UnresolvedData unresolvedData, Timestamp maxApplied)
         {
-            super(unavailable, data);
+            super(unavailable, unresolvedData);
             this.maxApplied = maxApplied;
         }
 

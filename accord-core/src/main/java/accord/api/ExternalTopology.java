@@ -16,21 +16,12 @@
  * limitations under the License.
  */
 
-package accord.coordinate.tracking;
+package accord.api;
 
-import accord.primitives.DataConsistencyLevel;
-import accord.topology.Shard;
-
-public abstract class ShardTracker
+/**
+ * Marker interface for Topology information needed externally outside of Accord by it's integration
+ */
+public interface ExternalTopology
 {
-    public final Shard shard;
-    // TODO if ReadTracker.ReadShardTracker were no longer static it could get the dataCL from ReadTracker
-    // but going forward more cases like commit consistency might need it?
-    public final DataConsistencyLevel dataCL;
-
-    public ShardTracker(Shard shard, DataConsistencyLevel dataCL)
-    {
-        this.shard = shard;
-        this.dataCL = dataCL;
-    }
+    ExternalTopology EMPTY = new ExternalTopology() {};
 }

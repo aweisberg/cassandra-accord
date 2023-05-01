@@ -24,9 +24,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import accord.primitives.Range;
 import accord.local.Node.Id;
 import accord.maelstrom.Datum.Kind;
+import accord.primitives.Range;
 import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.utils.WrapAroundList;
@@ -84,6 +84,6 @@ public class TopologyFactory
             for (int i = 0 ; i < this.shards ; ++i)
                 shards.add(new Shard(ranges[j][i], electorates.get(i % electorates.size()), fastPathElectorates.get(i % fastPathElectorates.size())));
         }
-        return new Topology(1, toArray(shards, Shard[]::new));
+        return new Topology(1, null, toArray(shards, Shard[]::new));
     }
 }

@@ -78,7 +78,12 @@ public class ImmutableCommandTest
     private static class CommandStoreSupport
     {
         final AtomicReference<Topology> local = new AtomicReference<>(TOPOLOGY);
-        final MockStore data = new MockStore();
+        final MockStore data;
+
+        public CommandStoreSupport(Node.Id id)
+        {
+            data = new MockStore(id);
+        }
     }
 
     private static void setTopologyEpoch(AtomicReference<Topology> topology, long epoch)
@@ -117,7 +122,7 @@ public class ImmutableCommandTest
     @Test
     void noConflictWitnessTest()
     {
-        CommandStoreSupport support = new CommandStoreSupport();
+        CommandStoreSupport support = new CommandStoreSupport(ID1);
         InMemoryCommandStore commands = createStore(support);
         MockCluster.Clock clock = new MockCluster.Clock(100);
         TxnId txnId = clock.idForNode(1, 1);
@@ -140,7 +145,7 @@ public class ImmutableCommandTest
 
     @Test
     void supersedingEpochWitnessTest() throws ExecutionException {
-        CommandStoreSupport support = new CommandStoreSupport();
+        CommandStoreSupport support = new CommandStoreSupport(ID1);
         Node node = createNode(ID1, support);
         CommandStore commands = node.unsafeByIndex(0);
         TxnId txnId = node.nextTxnId(Write, Key);

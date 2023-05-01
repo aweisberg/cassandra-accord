@@ -119,7 +119,7 @@ public class BlockOnDeps implements Callback<ReadReply>
                 // the replica may be missing the original commit, or the additional commit, so send everything
                 Topologies topology = node.topology().preciseEpochs(route, txnId.epoch(), txnId.epoch());
                 Topology coordinateTopology = topology.forEpoch(txnId.epoch());
-                node.send(from, new Commit(Maximal, from, coordinateTopology, topology, txnId, txn, route, txn.keys().toParticipants(), txnId, deps, false));
+                node.send(from, new Commit(Maximal, from, coordinateTopology, topology, txnId, txn, route, txn.keys().toParticipants(), txnId, deps, null));
                 break;
             case Invalid:
                 onFailure(from, new IllegalStateException("Submitted a read command to a replica that did not own the range"));
