@@ -17,19 +17,26 @@
  */
 package accord.local;
 
+import java.util.Set;
+
+import com.google.common.collect.ImmutableSet;
+
 import accord.api.Result;
 import accord.api.VisibleForImplementation;
 import accord.local.Command.WaitingOn;
 import accord.local.CommonAttributes.Mutable;
-import accord.messages.*;
+import accord.messages.Accept;
+import accord.messages.Apply;
+import accord.messages.BeginRecovery;
+import accord.messages.Commit;
+import accord.messages.MessageType;
+import accord.messages.PreAccept;
+import accord.messages.Propagate;
 import accord.primitives.Ballot;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
 import accord.primitives.Timestamp;
 import accord.primitives.Writes;
-
-import java.util.EnumSet;
-import java.util.Set;
 
 import static accord.messages.MessageType.APPLY_MAXIMAL_REQ;
 import static accord.messages.MessageType.APPLY_MINIMAL_REQ;
@@ -42,8 +49,6 @@ import static accord.messages.MessageType.PROPAGATE_COMMIT_MSG;
 import static accord.messages.MessageType.PROPAGATE_PRE_ACCEPT_MSG;
 import static accord.primitives.PartialTxn.merge;
 import static accord.utils.Invariants.checkState;
-
-import static java.util.EnumSet.of;
 
 @VisibleForImplementation
 public class SerializerSupport
@@ -77,8 +82,8 @@ public class SerializerSupport
         }
     }
 
-    private static final EnumSet<MessageType> PRE_ACCEPT_TYPES =
-        of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG);
+    private static final Set<MessageType> PRE_ACCEPT_TYPES =
+        ImmutableSet.of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG);
 
     private static Command.PreAccepted preAccepted(Mutable attrs, Timestamp executeAt, Ballot promised, MessageProvider messageProvider)
     {
@@ -106,8 +111,8 @@ public class SerializerSupport
         return Command.Accepted.accepted(attrs, status, executeAt, promised, accepted);
     }
 
-    private static final EnumSet<MessageType> PRE_ACCEPT_COMMIT_TYPES =
-        of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG,
+    private static final Set<MessageType> PRE_ACCEPT_COMMIT_TYPES =
+        ImmutableSet.of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG,
            COMMIT_MINIMAL_REQ, COMMIT_MAXIMAL_REQ, PROPAGATE_COMMIT_MSG);
 
     private static Command.Committed committed(Mutable attrs, SaveStatus status, Timestamp executeAt, Ballot promised, Ballot accepted, WaitingOnProvider waitingOnProvider, MessageProvider messageProvider)
@@ -143,8 +148,8 @@ public class SerializerSupport
         return Command.Committed.committed(attrs, status, executeAt, promised, accepted, waitingOnProvider.provide(deps));
     }
 
-    private static final EnumSet<MessageType> PRE_ACCEPT_COMMIT_APPLY_TYPES =
-        of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG,
+    private static final Set<MessageType> PRE_ACCEPT_COMMIT_APPLY_TYPES =
+        ImmutableSet.of(PRE_ACCEPT_REQ, BEGIN_RECOVER_REQ, PROPAGATE_PRE_ACCEPT_MSG,
            COMMIT_MINIMAL_REQ, COMMIT_MAXIMAL_REQ, PROPAGATE_COMMIT_MSG,
            APPLY_MINIMAL_REQ, APPLY_MAXIMAL_REQ, PROPAGATE_APPLY_MSG);
 
@@ -216,8 +221,8 @@ public class SerializerSupport
         return Command.Executed.executed(attrs, status, executeAt, promised, accepted, waitingOnProvider.provide(deps), writes, result);
     }
 
-    private static final EnumSet<MessageType> APPLY_TYPES =
-            of(APPLY_MINIMAL_REQ, APPLY_MAXIMAL_REQ, PROPAGATE_APPLY_MSG);
+    private static final Set<MessageType> APPLY_TYPES =
+            ImmutableSet.of(APPLY_MINIMAL_REQ, APPLY_MAXIMAL_REQ, PROPAGATE_APPLY_MSG);
 
     private static Command.Truncated truncated(Mutable attrs, SaveStatus status, Timestamp executeAt, MessageProvider messageProvider)
     {
