@@ -26,21 +26,21 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import accord.api.ConfigurationService.EpochReady;
-import accord.primitives.Ranges;
-import accord.utils.async.AsyncResult;
-import accord.utils.async.AsyncResults;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import accord.api.ConfigurationService;
+import accord.api.ConfigurationService.EpochReady;
 import accord.impl.AbstractConfigurationService.Minimal.EpochHistory;
 import accord.local.Node.Id;
 import accord.primitives.Range;
+import accord.primitives.Ranges;
 import accord.topology.Shard;
 import accord.topology.Topology;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 
 public class AbstractConfigurationServiceTest
 {
@@ -177,7 +177,7 @@ public class AbstractConfigurationServiceTest
 
     private static Topology topology(long epoch, Range range, List<Id> nodes, Set<Id> fastPath)
     {
-        return new Topology(epoch, shard(range, nodes, fastPath));
+        return new Topology(epoch, null, shard(range, nodes, fastPath));
     }
 
     private static Topology topology(long epoch, Id... fastPath)

@@ -18,38 +18,53 @@
 
 package accord.impl.mock;
 
-import accord.NetworkFilter;
-import accord.api.MessageSink;
-import accord.impl.*;
-import accord.local.AgentExecutor;
-import accord.local.Node;
-import accord.local.Node.Id;
-import accord.local.ShardDistributor;
-import accord.messages.SafeCallback;
-import accord.primitives.Ranges;
-import accord.utils.DefaultRandom;
-import accord.utils.EpochFunction;
-import accord.utils.RandomSource;
-import accord.utils.ThreadPoolScheduler;
-import accord.primitives.TxnId;
-import accord.messages.Callback;
-import accord.messages.Reply;
-import accord.messages.Request;
-import accord.topology.Topology;
-import accord.utils.Invariants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.LongSupplier;
 
-import static accord.Utils.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import accord.NetworkFilter;
+import accord.api.MessageSink;
+import accord.local.AgentExecutor;
+import accord.impl.InMemoryCommandStores;
+import accord.impl.IntKey;
+import accord.impl.SimpleProgressLog;
+import accord.impl.SizeOfIntersectionSorter;
+import accord.impl.TestAgent;
+import accord.impl.TopologyUtils;
+import accord.local.Node;
+import accord.local.Node.Id;
+import accord.local.ShardDistributor;
+import accord.messages.Callback;
+import accord.messages.Reply;
+import accord.messages.Request;
+import accord.messages.SafeCallback;
+import accord.primitives.Ranges;
+import accord.primitives.TxnId;
+import accord.topology.Topology;
+import accord.utils.DefaultRandom;
+import accord.utils.EpochFunction;
+import accord.utils.Invariants;
+import accord.utils.RandomSource;
+import accord.utils.ThreadPoolScheduler;
+
+import static accord.Utils.id;
+import static accord.Utils.idList;
 import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Txn.Kind.Write;
+import static java.lang.System.currentTimeMillis;
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
 public class MockCluster implements Network, AutoCloseable, Iterable<Node>
@@ -60,13 +75,16 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
     private final Config config;
     private final LongSupplier nowSupplier;
     private final Map<Id, Node> nodes = new ConcurrentHashMap<>();
+    private final Map<Id, MockStore> dataStores = new HashMap<>();
     private final BiFunction<Id, Network, MessageSink> messageSinkFactory;
     private int nextNodeId = 1;
     public NetworkFilter networkFilter = new NetworkFilter();
+    public Queue<Object> recordedMessages = new ConcurrentLinkedQueue<>();
 
     private long nextMessageId = 0;
     Map<Long, SafeCallback> callbacks = new ConcurrentHashMap<>();
     private final EpochFunction<MockConfigurationService> onFetchTopology;
+    private final boolean recordMessages;
 
     private MockCluster(Builder builder)
     {
@@ -75,6 +93,7 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
         this.nowSupplier = builder.nowSupplier;
         this.messageSinkFactory = builder.messageSinkFactory;
         this.onFetchTopology = builder.onFetchTopology;
+        this.recordMessages = builder.recordMessages;
 
         init(builder.topology);
     }
@@ -103,7 +122,8 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
 
     private Node createNode(Id id, Topology topology)
     {
-        MockStore store = new MockStore();
+        MockStore store = new MockStore(id);
+        dataStores.put(id, store);
         MessageSink messageSink = messageSinkFactory.apply(id, this);
         MockConfigurationService configurationService = new MockConfigurationService(messageSink, onFetchTopology, topology);
         Node node = new Node(id,
@@ -166,6 +186,7 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
         long delayNanos = networkFilter.delayNanos(to);
 
         long messageId = nextMessageId();
+        recordedMessages.offer(new RecordedRequest(currentTimeMillis(), from, to, request, callback, messageId));
         if (callback != null)
         {
             SafeCallback sc = new SafeCallback(executor, callback);
@@ -189,6 +210,7 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
     @Override
     public void reply(Id from, Id replyingToNode, long replyingToMessage, Reply reply)
     {
+        recordedMessages.offer(new RecordedReply(currentTimeMillis(), from, replyingToNode, reply, replyingToMessage));
         Node node = nodes.get(replyingToNode);
         if (node == null)
         {
@@ -279,6 +301,44 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
         return nodes(idList(ids));
     }
 
+    public static class RecordedRequest
+    {
+        public final long clock;
+        public final Id from;
+        public final Id to;
+        public final Request request;
+        public final Callback callback;
+        public final long callbackId;
+
+        public RecordedRequest(long clock, Id from, Id to, Request request, Callback callback, long callbackId)
+        {
+            this.clock = clock;
+            this.from = from;
+            this.to = to;
+            this.request = request;
+            this.callback = callback;
+            this.callbackId = callbackId;
+        }
+    }
+
+    public static class RecordedReply
+    {
+        public final long clock;
+        public final Id from;
+        public final Id replyingToNode;
+        public final Reply reply;
+        public final long callbackId;
+
+        public RecordedReply(long clock, Id from, Id replyingToNode, Reply reply, long callbackId)
+        {
+            this.clock = clock;
+            this.from = from;
+            this.replyingToNode = replyingToNode;
+            this.reply = reply;
+            this.callbackId = callbackId;
+        }
+    }
+
     public static class Config
     {
         private final long seed;
@@ -305,6 +365,7 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
         private LongSupplier nowSupplier = System::currentTimeMillis;
         private BiFunction<Id, Network, MessageSink> messageSinkFactory = SimpleMessageSink::new;
         private EpochFunction<MockConfigurationService> onFetchTopology = EpochFunction.noop();
+        private boolean recordMessages = false;
 
         public Builder seed(long seed)
         {
@@ -345,6 +406,12 @@ public class MockCluster implements Network, AutoCloseable, Iterable<Node>
         public Builder messageSink(BiFunction<Id, Network, MessageSink> factory)
         {
             this.messageSinkFactory = factory;
+            return this;
+        }
+
+        public Builder recordMessages()
+        {
+            this.recordMessages = true;
             return this;
         }
 

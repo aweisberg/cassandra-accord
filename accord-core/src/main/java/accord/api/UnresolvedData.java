@@ -16,21 +16,27 @@
  * limitations under the License.
  */
 
-package accord.coordinate.tracking;
+package accord.api;
 
-import accord.primitives.DataConsistencyLevel;
-import accord.topology.Shard;
-
-public abstract class ShardTracker
+/**
+ * The result of having performed a read at some node and potentially reading incomplete data
+ * not written by Accord
+ */
+public interface UnresolvedData
 {
-    public final Shard shard;
-    // TODO if ReadTracker.ReadShardTracker were no longer static it could get the dataCL from ReadTracker
-    // but going forward more cases like commit consistency might need it?
-    public final DataConsistencyLevel dataCL;
+    /**
+     * Combine the contents of the parameter with this object and return the resultant object.
+     * This method may modify the current object and return itself.
+     */
+    UnresolvedData merge(UnresolvedData data);
 
-    public ShardTracker(Shard shard, DataConsistencyLevel dataCL)
+    static UnresolvedData mergeForReduce(UnresolvedData left, UnresolvedData right)
     {
-        this.shard = shard;
-        this.dataCL = dataCL;
+        if (left == null)
+            return right;
+        if (right == null)
+            return null;
+
+        return left.merge(right);
     }
 }

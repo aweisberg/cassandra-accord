@@ -18,10 +18,12 @@
 
 package accord.messages;
 
+import javax.annotation.Nullable;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
+import accord.api.UnresolvedData;
 import accord.local.Command;
 import accord.local.Node;
 import accord.local.PreLoadContext;
@@ -33,7 +35,6 @@ import accord.primitives.Participants;
 import accord.primitives.Ranges;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
-import javax.annotation.Nullable;
 
 import static accord.local.Status.Committed;
 import static accord.local.Status.Known.Done;
@@ -60,13 +61,13 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
 
     public WaitUntilApplied(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, long executeAtEpoch)
     {
-        super(to, topologies, txnId, readScope);
+        super(to, topologies, txnId, readScope, null, null);
         this.executeAtEpoch = executeAtEpoch;
     }
 
     protected WaitUntilApplied(TxnId txnId, Participants<?> readScope, long executeAtEpoch, long waitForEpoch)
     {
-        super(txnId, readScope, waitForEpoch);
+        super(txnId, readScope, waitForEpoch, null, null);
         this.executeAtEpoch = executeAtEpoch;
     }
 
@@ -214,12 +215,12 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     }
 
     @Override
-    protected void reply(@Nullable Ranges unavailable, @Nullable Data data)
+    protected void reply(@Nullable Ranges unavailable, @Nullable UnresolvedData unresolvedData)
     {
         if (isInvalid)
             return;
 
-        node.reply(replyTo, replyContext, new ReadOk(unavailable, data));
+        node.reply(replyTo, replyContext, new ReadOk(unavailable, unresolvedData));
     }
 
     private void removeListener(SafeCommandStore safeStore, TxnId txnId)
@@ -242,7 +243,7 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     @Override
     public String toString()
     {
-        return "WaitForApply{" +
+        return "WaitUntilApplied{" +
                "txnId:" + txnId +
                '}';
     }

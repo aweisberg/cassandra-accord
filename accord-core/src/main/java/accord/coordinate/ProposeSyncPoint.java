@@ -72,7 +72,7 @@ public class ProposeSyncPoint<S extends Seekables<?, ?>> extends Propose<SyncPoi
     {
         if (txnId.rw() == ExclusiveSyncPoint)
         {
-            Apply.sendMaximal(node, txnId, route, txn, executeAt, deps, txn.execute(txnId, executeAt, null), txn.result(txnId, executeAt, null));
+            Apply.sendMaximal(node, txnId, route, txn, executeAt, deps, txn.execute(txnId, executeAt, null, null), txn.result(txnId, executeAt, null));
             node.configService().reportEpochClosed((Ranges)keysOrRanges, txnId.epoch());
             callback.accept(new SyncPoint<S>(txnId, deps, keysOrRanges, (FullRangeRoute) route, true), null);
         }

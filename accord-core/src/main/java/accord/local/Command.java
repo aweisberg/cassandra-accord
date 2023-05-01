@@ -30,8 +30,10 @@ import com.google.common.collect.ImmutableSortedSet;
 
 import accord.api.Data;
 import accord.api.ProgressLog.ProgressShard;
+import accord.api.Read;
 import accord.api.Result;
 import accord.api.RoutingKey;
+import accord.api.UnresolvedData;
 import accord.api.VisibleForImplementation;
 import accord.primitives.Ballot;
 import accord.primitives.Deps;
@@ -39,6 +41,7 @@ import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.PartialTxn;
 import accord.primitives.Route;
+import accord.primitives.RoutingKeys;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Unseekables;
@@ -48,15 +51,6 @@ import accord.utils.IndexedQuadConsumer;
 import accord.utils.Invariants;
 import accord.utils.SimpleBitSet;
 import accord.utils.async.AsyncChain;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-
-import accord.utils.SimpleBitSet;
-import accord.utils.async.AsyncChain;
-
-import accord.api.Result;
-import accord.api.RoutingKey;
-import accord.api.VisibleForImplementation;
 
 import static accord.api.ProgressLog.ProgressShard.Unsure;
 import static accord.local.Listeners.Immutable.EMPTY;
@@ -788,9 +782,9 @@ public abstract class Command implements CommonAttributes
             return new Committed(common, status, executeAt, promised, accepted, waitingOn);
         }
 
-        public AsyncChain<Data> read(SafeCommandStore safeStore)
+        public AsyncChain<UnresolvedData> read(SafeCommandStore safeStore, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
         {
-            return partialTxn().read(safeStore, executeAt());
+            return partialTxn().read(safeStore, executeAt(), dataReadKeys, followupRead);
         }
 
         public WaitingOn waitingOn()

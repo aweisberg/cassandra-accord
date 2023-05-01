@@ -31,13 +31,14 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 import accord.Utils;
-import accord.api.Data;
+import accord.api.DataResolver;
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Query;
 import accord.api.Read;
 import accord.api.Result;
 import accord.api.RoutingKey;
+import accord.api.UnresolvedData;
 import accord.api.Update;
 import accord.api.Write;
 import accord.impl.IntKey;
@@ -51,6 +52,7 @@ import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.messages.ReadData.ReadNack;
 import accord.primitives.Ballot;
+import accord.primitives.DataConsistencyLevel;
 import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
@@ -59,6 +61,7 @@ import accord.primitives.PartialTxn;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
+import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
@@ -77,6 +80,7 @@ import static accord.Utils.id;
 import static accord.utils.Utils.listOf;
 import static accord.utils.async.AsyncChains.getUninterruptibly;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 
 class ReadDataTest
 {
@@ -97,16 +101,19 @@ class ReadDataTest
         TxnId txnId = node.nextTxnId(Txn.Kind.Write, Routable.Domain.Key);
         Keys keys = Keys.of(IntKey.key(1), IntKey.key(43));
 
-        AsyncResults.SettableResult<Data> readResult = new AsyncResults.SettableResult<>();
+        AsyncResults.SettableResult<UnresolvedData> readResult = new AsyncResults.SettableResult<>();
 
         Read read = Mockito.mock(Read.class);
         Mockito.when(read.slice(any())).thenReturn(read);
         Mockito.when(read.merge(any())).thenReturn(read);
-        Mockito.when(read.read(any(), any(), any(), any(), any())).thenAnswer(new Answer<AsyncChain<Data>>()
+        Mockito.when(read.readDataCL()).thenReturn(DataConsistencyLevel.UNSPECIFIED);
+        Mockito.when(read.keys()).thenReturn((Seekables)keys);
+
+        Mockito.when(read.read(any(), anyBoolean(), any(), any(), any(), any())).thenAnswer(new Answer<AsyncChain<UnresolvedData>>()
         {
             private final boolean called = false;
             @Override
-            public AsyncChain<Data> answer(InvocationOnMock ignore) throws Throwable
+            public AsyncChain<UnresolvedData> answer(InvocationOnMock ignore) throws Throwable
             {
                 if (called) throw new IllegalStateException("Multiple calls");
                 return readResult;
@@ -114,9 +121,10 @@ class ReadDataTest
         });
         Query query = Mockito.mock(Query.class);
         Update update = Mockito.mock(Update.class);
+        DataResolver resolver = Mockito.mock(DataResolver.class);
         Mockito.when(update.slice(any())).thenReturn(update);
 
-        Txn txn = new Txn.InMemory(keys, read, query, update);
+        Txn txn = new Txn.InMemory(keys, read, resolver, query, update);
         PartialTxn partialTxn = txn.slice(RANGES, true);
 
         fn.accept(new State(node, sink, txnId, partialTxn, readResult));
@@ -133,7 +141,7 @@ class ReadDataTest
             Mockito.verifyNoInteractions(state.sink);
 
             state.apply();
-            state.readResult.setSuccess(Mockito.mock(Data.class));
+            state.readResult.setSuccess(Mockito.mock(UnresolvedData.class));
             Mockito.verify(state.sink).reply(Mockito.eq(state.node.id()), Mockito.eq(replyContext), Mockito.eq(ReadNack.Redundant));
         });
     }
@@ -156,7 +164,7 @@ class ReadDataTest
             Mockito.verifyNoInteractions(state.sink);
 
             state.apply();
-            state.readResult.setSuccess(Mockito.mock(Data.class));
+            state.readResult.setSuccess(Mockito.mock(UnresolvedData.class));
 
             Mockito.verify(state.sink).reply(Mockito.eq(state.node.id()), Mockito.eq(replyContext), Mockito.eq(ReadNack.Redundant));
         });
@@ -176,7 +184,7 @@ class ReadDataTest
 
             // ack doesn't get called due to waitingOnCount not being -1, can only happen once
             // the process command completes
-            state.readResult.setSuccess(Mockito.mock(Data.class));
+            state.readResult.setSuccess(Mockito.mock(UnresolvedData.class));
             state.readyToExecute(store);
 
             store = stores.get(1);
@@ -246,9 +254,9 @@ class ReadDataTest
         private final RoutingKey progressKey;
         private final Timestamp executeAt;
         private final PartialDeps deps;
-        private final AsyncResults.SettableResult<Data> readResult;
+        private final AsyncResults.SettableResult<UnresolvedData> readResult;
 
-        State(Node node, MessageSink sink, TxnId txnId, PartialTxn partialTxn, AsyncResults.SettableResult<Data> readResult)
+        State(Node node, MessageSink sink, TxnId txnId, PartialTxn partialTxn, AsyncResults.SettableResult<UnresolvedData> readResult)
         {
             this.node = node;
             this.sink = sink;
@@ -288,7 +296,7 @@ class ReadDataTest
             AsyncResults.SettableResult<Void> writeResult = new AsyncResults.SettableResult<>();
             Write write = Mockito.mock(Write.class);
             Mockito.when(write.apply(any(), any(), any(), any())).thenReturn(writeResult);
-            Writes writes = new Writes(txnId, executeAt, keys, write);
+            Writes writes = new Writes(txnId, executeAt, keys, write, DataConsistencyLevel.UNSPECIFIED);
 
             forEach(store -> check(store.execute(PreLoadContext.contextFor(txnId, keys), safe -> {
                 CheckedCommands.apply(safe, txnId, route, progressKey, executeAt, deps, partialTxn, writes, Mockito.mock(Result.class));
@@ -299,7 +307,7 @@ class ReadDataTest
         ReplyContext process()
         {
             ReplyContext replyContext = Mockito.mock(ReplyContext.class);
-            ReadData readData = new ReadTxnData(node.id(), TOPOLOGIES, txnId, keys.toParticipants(), txnId);
+            ReadData readData = new ReadTxnData(node.id(), TOPOLOGIES, txnId, keys.toParticipants(), txnId, null, null);
             readData.process(node, node.id(), replyContext);
             return replyContext;
         }

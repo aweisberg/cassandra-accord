@@ -34,6 +34,7 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.api.ExternalTopology;
 import accord.burn.TopologyUpdates;
 import accord.coordinate.CoordinateGloballyDurable;
 import accord.coordinate.CoordinateShardDurable;
@@ -273,7 +274,7 @@ public class TopologyRandomizer
 
     private static boolean reassignsRanges(Topology current, Shard[] nextShards, Map<Node.Id, Ranges> previouslyReplicated)
     {
-        Topology next = new Topology(current.epoch + 1, nextShards);
+        Topology next = new Topology(current.epoch + 1, ExternalTopology.EMPTY, nextShards);
         Map<Node.Id, Ranges> additions = getAdditions(current, next);
 
         for (Map.Entry<Node.Id, Ranges> entry : additions.entrySet())
@@ -390,7 +391,7 @@ public class TopologyRandomizer
             }
         }
 
-        Topology nextTopology = new Topology(current.epoch + 1, newShards);
+        Topology nextTopology = new Topology(current.epoch + 1, ExternalTopology.EMPTY, newShards);
 
         Map<Node.Id, Ranges> nextAdditions = getAdditions(current, nextTopology);
         for (Map.Entry<Node.Id, Ranges> entry : nextAdditions.entrySet())

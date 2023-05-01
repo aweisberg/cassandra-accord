@@ -46,16 +46,17 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.Key;
 import accord.impl.IntHashKey;
+import accord.impl.TopologyFactory;
 import accord.impl.basic.Cluster;
+import accord.impl.basic.Packet;
+import accord.impl.basic.PendingQueue;
 import accord.impl.basic.PendingRunnable;
 import accord.impl.basic.PropagatingPendingQueue;
 import accord.impl.basic.RandomDelayQueue;
 import accord.impl.basic.RandomDelayQueue.Factory;
-import accord.impl.TopologyFactory;
-import accord.impl.basic.Packet;
-import accord.impl.basic.PendingQueue;
 import accord.impl.basic.SimulatedDelayedExecutorService;
 import accord.impl.list.ListAgent;
+import accord.impl.list.ListData;
 import accord.impl.list.ListQuery;
 import accord.impl.list.ListRead;
 import accord.impl.list.ListRequest;
@@ -108,7 +109,7 @@ public class BurnTest
                 Ranges ranges = Ranges.of(requestRanges.toArray(new Range[0]));
                 ListRead read = new ListRead(random.decide(readInCommandStore) ? Function.identity() : executor, ranges, ranges);
                 ListQuery query = new ListQuery(client, count);
-                ListRequest request = new ListRequest(new Txn.InMemory(ranges, read, query, null));
+                ListRequest request = new ListRequest(new Txn.InMemory(ranges, read, ListData.EMPTY, query, null));
                 packets.add(new Packet(client, node, count, request));
 
 
@@ -127,15 +128,19 @@ public class BurnTest
                 while (writeCount-- > 0)
                 {
                     int i = randomKeyIndex(random, keys, update.keySet());
-                    update.put(keys.get(i), ++next[i]);
+                    Key k = keys.get(i);
+                    update.put(k, ++next[i]);
                 }
 
                 Keys readKeys = new Keys(requestKeys);
+                // ListUpdate will want all update keys read so it can validate the timestamp
+                if (isWrite)
+                    readKeys = readKeys.with(update.keys());
                 if (isWrite)
                     requestKeys.addAll(update.keySet());
                 ListRead read = new ListRead(random.decide(readInCommandStore) ? Function.identity() : executor, readKeys, new Keys(requestKeys));
                 ListQuery query = new ListQuery(client, count);
-                ListRequest request = new ListRequest(new Txn.InMemory(new Keys(requestKeys), read, query, update));
+                ListRequest request = new ListRequest(new Txn.InMemory(new Keys(requestKeys), read, ListData.EMPTY, query, update));
                 packets.add(new Packet(client, node, count, request));
             }
         }

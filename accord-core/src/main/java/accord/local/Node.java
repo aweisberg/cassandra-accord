@@ -254,7 +254,11 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         {
             System.out.println("Having to await epoch");
             configService.fetchTopologyForEpoch(epoch);
-            return topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
+            AsyncChain<T> resultChain =  topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
+            return resultChain.map(retval -> {
+                System.out.println("Successfully awaited epoch");
+                return retval;
+            });
         }
     }
 

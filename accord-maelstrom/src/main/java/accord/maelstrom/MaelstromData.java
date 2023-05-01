@@ -21,15 +21,37 @@ package accord.maelstrom;
 import java.util.TreeMap;
 
 import accord.api.Data;
+import accord.api.DataResolver;
+import accord.api.ExternalTopology;
 import accord.api.Key;
+import accord.api.Read;
+import accord.api.ResolveResult;
+import accord.api.UnresolvedData;
+import accord.primitives.Timestamp;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
-public class MaelstromData extends TreeMap<Key, Value> implements Data
+public class MaelstromData extends TreeMap<Key, Value> implements Data, UnresolvedData, DataResolver
 {
+    public static final MaelstromData EMPTY = new MaelstromData();
+
     @Override
-    public Data merge(Data data)
+    public MaelstromData merge(Data data)
     {
         if (data != null)
             this.putAll(((MaelstromData)data));
         return this;
+    }
+
+    @Override
+    public UnresolvedData merge(UnresolvedData unresolvedData)
+    {
+        return merge((Data)unresolvedData);
+    }
+
+    @Override
+    public AsyncChain<ResolveResult> resolve(Timestamp executeAt, ExternalTopology externalTopology, Read read, UnresolvedData unresolvedData, FollowupReader followUpReader)
+    {
+        return AsyncChains.success(new ResolveResult((MaelstromData)unresolvedData, MaelstromWrite.EMPTY));
     }
 }

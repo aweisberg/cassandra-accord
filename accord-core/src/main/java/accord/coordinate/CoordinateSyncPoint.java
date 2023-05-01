@@ -87,23 +87,21 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
 
     private static <S extends Seekables<?, ?>> AsyncResult<CoordinateSyncPoint<S>> coordinate(Node node, Kind kind, S keysOrRanges, boolean async)
     {
-        checkState(kind == Kind.SyncPoint || kind == ExclusiveSyncPoint);
-        node.nextTxnId(Kind.SyncPoint, keysOrRanges.domain());
-        TxnId txnId = node.nextTxnId(kind, keysOrRanges.domain());
-        System.out.println("Requesting sync point coordination creation");
-        return node.withEpoch(txnId.epoch(), () ->
-                AsyncChains.success(coordinate(node, txnId, keysOrRanges, async))
-        ).beginAsResult();
+            checkState(kind == Kind.SyncPoint || kind == ExclusiveSyncPoint);
+            node.nextTxnId(Kind.SyncPoint, keysOrRanges.domain());
+            TxnId txnId = node.nextTxnId(kind, keysOrRanges.domain());
+            return node.withEpoch(txnId.epoch(), () ->
+                    AsyncChains.success(coordinate(node, txnId, keysOrRanges, async))
+            ).beginAsResult();
     }
 
     private static <S extends Seekables<?, ?>> CoordinateSyncPoint<S> coordinate(Node node, TxnId txnId, S keysOrRanges, boolean async)
     {
-        System.out.println("Doing sync point coordination creation");
-        checkState(txnId.rw() == Kind.SyncPoint || txnId.rw() == ExclusiveSyncPoint);
-        FullRoute route = node.computeRoute(txnId, keysOrRanges);
-        CoordinateSyncPoint<S> coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(txnId.rw(), keysOrRanges), route, keysOrRanges, async);
-        coordinate.start();
-        return coordinate;
+           checkState(txnId.rw() == Kind.SyncPoint || txnId.rw() == ExclusiveSyncPoint);
+           FullRoute route = node.computeRoute(txnId, keysOrRanges);
+           CoordinateSyncPoint<S> coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(txnId.rw(), keysOrRanges), route, keysOrRanges, async);
+           coordinate.start();
+           return coordinate;
     }
 
     static <S extends Seekables<?, ?>> void blockOnDeps(Node node, Txn txn, TxnId txnId, FullRoute<?> route, S keysOrRanges, Deps deps, BiConsumer<SyncPoint<S>, Throwable> callback, boolean async)
@@ -167,6 +165,6 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
         Timestamp executeAt = txnId;
         Txn txn = node.agent().emptyTxn(txnId.rw(), syncPoint.keysOrRanges);
         Deps deps = syncPoint.waitFor;
-        Apply.sendMaximal(node, to, txnId, syncPoint.route(), txn, executeAt, deps, txn.execute(txnId, executeAt, null), txn.result(txnId, executeAt, null));
+        Apply.sendMaximal(node, to, txnId, syncPoint.route(), txn, executeAt, deps, txn.execute(txnId, executeAt, null, null), txn.result(txnId, executeAt, null));
     }
 }

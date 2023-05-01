@@ -26,15 +26,15 @@ import java.util.stream.Collectors;
 
 import accord.api.Data;
 import accord.api.Key;
+import accord.api.RepairWrites;
 import accord.api.Update;
 import accord.local.CommandStore;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
-import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.utils.Invariants;
-import accord.utils.async.AsyncExecutor;
 import accord.utils.Timestamped;
+import accord.utils.async.AsyncExecutor;
 
 public class ListUpdate extends TreeMap<Key, Integer> implements Update
 {
@@ -46,15 +46,19 @@ public class ListUpdate extends TreeMap<Key, Integer> implements Update
     }
 
     @Override
-    public Seekables<?, ?> keys()
+    public Keys keys()
     {
         return new Keys(navigableKeySet());
     }
 
     @Override
-    public ListWrite apply(Timestamp executeAt, Data read)
+    public ListWrite apply(Timestamp executeAt, Data read, RepairWrites repairWrites)
     {
         ListWrite write = new ListWrite(executor);
+
+        if (repairWrites != null)
+            ((ListWrite) repairWrites).entrySet().forEach(e -> write.put(e.getKey(), e.getValue()));
+
         Map<Key, Timestamped<int[]>> data = (ListData)read;
         for (Map.Entry<Key, Integer> e : entrySet())
         {
@@ -62,6 +66,7 @@ public class ListUpdate extends TreeMap<Key, Integer> implements Update
             Invariants.checkState(prev.timestamp.compareTo(executeAt) < 0);
             write.put(e.getKey(), append(prev.data, e.getValue()));
         }
+
         return write;
     }
 

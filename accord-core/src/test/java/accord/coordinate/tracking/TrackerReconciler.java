@@ -18,22 +18,6 @@
 
 package accord.coordinate.tracking;
 
-import accord.burn.TopologyUpdates;
-import accord.impl.TestAgent;
-import accord.impl.basic.RandomDelayQueue;
-import accord.impl.basic.SimulatedDelayedExecutorService;
-import accord.local.AgentExecutor;
-import accord.utils.DefaultRandom;
-import accord.utils.RandomSource;
-import accord.impl.IntHashKey;
-import accord.impl.SizeOfIntersectionSorter;
-import accord.impl.TopologyFactory;
-import accord.local.Node.Id;
-import accord.topology.Topologies;
-import accord.topology.Topology;
-import accord.topology.TopologyRandomizer;
-import org.junit.jupiter.api.Assertions;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -42,6 +26,23 @@ import java.util.List;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import org.junit.jupiter.api.Assertions;
+
+import accord.burn.TopologyUpdates;
+import accord.impl.IntHashKey;
+import accord.impl.SizeOfIntersectionSorter;
+import accord.impl.TestAgent;
+import accord.impl.TopologyFactory;
+import accord.impl.basic.RandomDelayQueue;
+import accord.impl.basic.SimulatedDelayedExecutorService;
+import accord.local.AgentExecutor;
+import accord.local.Node.Id;
+import accord.topology.Topologies;
+import accord.topology.Topology;
+import accord.topology.TopologyRandomizer;
+import accord.utils.DefaultRandom;
+import accord.utils.RandomSource;
 
 public abstract class TrackerReconciler<ST extends ShardTracker, T extends AbstractTracker<ST>, E extends Enum<E>>
 {
@@ -75,6 +76,8 @@ public abstract class TrackerReconciler<ST extends ShardTracker, T extends Abstr
     {
         while (true)
         {
+            if (inflight.isEmpty())
+                System.out.println("Oops");
             Assertions.assertFalse(inflight.isEmpty());
             E next = events[random.nextInt(events.length)];
             Id from = inflight.get(random.nextInt(inflight.size()));
@@ -96,23 +99,23 @@ public abstract class TrackerReconciler<ST extends ShardTracker, T extends Abstr
     abstract void validate(RequestStatus status);
 
     protected static <ST extends ShardTracker, T extends AbstractTracker<ST>, E extends Enum<E>>
-    List<TrackerReconciler<ST, T, E>> generate(long seed, BiFunction<RandomSource, Topologies, ? extends TrackerReconciler<ST, T, E>> constructor)
+    List<TrackerReconciler<ST, T, E>> generate(long seed, BiFunction<RandomSource, Topologies, ? extends TrackerReconciler<ST, T, E>> constructor, int maxTopologies)
     {
         System.out.println("seed: " + seed);
         RandomSource random = new DefaultRandom(seed);
         SimulatedDelayedExecutorService executor = new SimulatedDelayedExecutorService(new RandomDelayQueue.Factory(random).get(), new TestAgent(), random);
-        return topologies(random, executor).map(topologies -> constructor.apply(random, topologies))
+        return topologies(random, maxTopologies, executor).map(topologies -> constructor.apply(random, topologies))
                 .collect(Collectors.toList());
     }
 
     // TODO (required, testing): generalise and parameterise topology generation a bit more
     //                           also, select a subset of the generated topologies to correctly simulate topology consumption logic
-    private static Stream<Topologies> topologies(RandomSource random, AgentExecutor executor)
+    private static Stream<Topologies> topologies(RandomSource random, int maxTopologies, AgentExecutor executor)
     {
         TopologyFactory factory = new TopologyFactory(2 + random.nextInt(3), IntHashKey.ranges(4 + random.nextInt(12)));
         List<Id> nodes = cluster(factory.rf * (1 + random.nextInt(factory.shardRanges.length - 1)));
         Topology topology = factory.toTopology(nodes);
-        int count = 1 + random.nextInt(3);
+        int count = Math.min(maxTopologies, 1 + random.nextInt(3));
 
         List<Topologies> result = new ArrayList<>();
         result.add(new Topologies.Single(SizeOfIntersectionSorter.SUPPLIER, topology));

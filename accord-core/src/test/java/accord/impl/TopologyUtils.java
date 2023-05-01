@@ -18,15 +18,20 @@
 
 package accord.impl;
 
-import accord.primitives.Range;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import accord.api.ExternalTopology;
 import accord.local.Node;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.topology.Shard;
 import accord.topology.Topology;
 import accord.utils.WrapAroundList;
 import accord.utils.WrapAroundSet;
-
-import java.util.*;
 
 import static accord.utils.Utils.toArray;
 
@@ -66,7 +71,7 @@ public class TopologyUtils
         final List<Shard> shards = new ArrayList<>();
         for (int i = 0 ; i < ranges.size() ; ++i)
             shards.add(new Shard(ranges.get(i), electorates.get(i % electorates.size()), fastPathElectorates.get(i % fastPathElectorates.size())));
-        return new Topology(1, toArray(shards, Shard[]::new));
+        return new Topology(1, ExternalTopology.EMPTY, toArray(shards, Shard[]::new));
     }
 
     public static Topology initialTopology(List<Node.Id> cluster, Ranges ranges, int rf)

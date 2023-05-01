@@ -18,28 +18,27 @@
 
 package accord.api;
 
-import accord.primitives.DataConsistencyLevel;
-import accord.primitives.Ranges;
-import accord.primitives.Seekables;
+import accord.local.Node.Id;
+import accord.messages.Callback;
 import accord.primitives.Timestamp;
-import javax.annotation.Nullable;
-
-import static accord.primitives.DataConsistencyLevel.UNSPECIFIED;
+import accord.utils.async.AsyncChain;
 
 /**
- * A client-defined update operation (the write equivalent of a query).
- * Takes as input the data returned by {@code Read}, and returns a {@code Write}
- * representing new information to distributed to each shard's stores.
+ * Process the result of Accord having performed a read and merge the results
+ * producing any repair writes necessary for the read to be monotonic.
+ *
+ * May repeat the read in order to produce the repair writes.
  */
-public interface Update
+public interface DataResolver
 {
-    Seekables<?, ?> keys();
-    // null is provided only if nothing was read
-    Write apply(Timestamp executeAt, @Nullable Data data, @Nullable RepairWrites repairWrites);
-    Update slice(Ranges ranges);
-    Update merge(Update other);
-    default DataConsistencyLevel writeDataCl()
+    /**
+     * Allow the resolver to request additional or redundant/repeated data reads from specific nodes
+     * in order to support things like read repair and short read protection.
+     */
+    interface FollowupReader
     {
-        return UNSPECIFIED;
+        void read(Read read, Id id, Callback<UnresolvedData> callback);
     }
+
+    AsyncChain<ResolveResult> resolve(Timestamp executeAt, ExternalTopology externalTopology, Read read, UnresolvedData unresolvedData, FollowupReader followUpReader);
 }

@@ -18,28 +18,31 @@
 
 package accord.api;
 
-import accord.primitives.DataConsistencyLevel;
-import accord.primitives.Ranges;
-import accord.primitives.Seekables;
-import accord.primitives.Timestamp;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import static accord.primitives.DataConsistencyLevel.UNSPECIFIED;
+import static accord.utils.Invariants.checkArgument;
+import static accord.utils.Invariants.nonNull;
 
 /**
- * A client-defined update operation (the write equivalent of a query).
- * Takes as input the data returned by {@code Read}, and returns a {@code Write}
- * representing new information to distributed to each shard's stores.
+ * Result of resolving UnresolvedData and fetching the full Data in DataResolver
+ *
+ * May contain repair writes which need to be persisted before any writes of this transaction
+ * and acknowledging the txn as committed. The transaction should not be acknowledged until the repair
+ * writes are applied at the requested read consistency level.
  */
-public interface Update
+public class ResolveResult
 {
-    Seekables<?, ?> keys();
-    // null is provided only if nothing was read
-    Write apply(Timestamp executeAt, @Nullable Data data, @Nullable RepairWrites repairWrites);
-    Update slice(Ranges ranges);
-    Update merge(Update other);
-    default DataConsistencyLevel writeDataCl()
+    @Nonnull
+    public final Data data;
+    @Nullable
+    public final RepairWrites repairWrites;
+
+    public ResolveResult(@Nonnull Data data, @Nullable RepairWrites repairWrites)
     {
-        return UNSPECIFIED;
+        nonNull(data);
+        checkArgument(repairWrites == null || !repairWrites.isEmpty());
+        this.data = data;
+        this.repairWrites = repairWrites;
     }
 }

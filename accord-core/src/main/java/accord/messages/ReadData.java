@@ -20,9 +20,7 @@ package accord.messages;
 
 import java.util.BitSet;
 import javax.annotation.Nullable;
-import javax.annotation.Nullable;
 
-import accord.api.Data;
 import accord.primitives.Participants;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
@@ -30,21 +28,17 @@ import accord.utils.Invariants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.api.Data;
+import accord.api.Read;
+import accord.api.UnresolvedData;
 import accord.local.CommandStore;
 import accord.local.Node;
 import accord.local.SafeCommandStore;
 import accord.messages.ReadData.ReadNack;
 import accord.primitives.PartialTxn;
-import accord.primitives.Participants;
 import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
-import accord.topology.Topologies;
-import accord.utils.Invariants;
-import javax.annotation.Nullable;
-import accord.topology.Topologies;
-import accord.utils.Invariants;
 
 import static accord.messages.MessageType.READ_RSP;
 import static accord.messages.TxnRequest.computeWaitForEpoch;
@@ -64,13 +58,12 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
 
         ReadType(int val)
         {
-            this.val = (byte)val;
+            this.val = (byte) val;
         }
 
-        @SuppressWarnings("unused")
-        public static ReadType fromValue(byte val)
+        public static ReadType valueOf(int val)
         {
-            switch (val)
+            switch(val)
             {
                 case 0:
                     return readTxnData;
@@ -85,24 +78,41 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
     // TODO (expected, cleanup): should this be a Route?
     public final Participants<?> readScope;
     private final long waitForEpoch;
-    private Data data;
+
+    /**
+     * A read generated during execution that isn't part of the original transaction description
+     * If not null then this is the read that should be performed instead of the one in the transaction
+     */
+    public final Read followupRead;
+
+    /**
+     * The keys that should be read as data reads instead of digest reads
+     * Empty collection means all digest reads, null means all data reads.
+     */
+    public @Nullable final RoutingKeys dataReadKeys;
+
+    private UnresolvedData unresolvedData;
     transient BitSet waitingOn;
     transient int waitingOnCount;
     transient Ranges unavailable;
 
-    public ReadData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope)
+    public ReadData(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
     {
         super(txnId);
         int startIndex = latestRelevantEpochIndex(to, topologies, readScope);
         this.readScope = TxnRequest.computeScope(to, topologies, readScope, startIndex, Participants::slice, Participants::with);
         this.waitForEpoch = computeWaitForEpoch(to, topologies, startIndex);
+        this.followupRead = followupRead;
+        this.dataReadKeys = dataReadKeys;
     }
 
-    protected ReadData(TxnId txnId, Participants<?> readScope, long waitForEpoch)
+    protected ReadData(TxnId txnId, Participants<?> readScope, long waitForEpoch, @Nullable RoutingKeys dataReadKeys, @Nullable Read followupRead)
     {
         super(txnId);
         this.readScope = readScope;
         this.waitForEpoch = waitForEpoch;
+        this.followupRead = followupRead;
+        this.dataReadKeys = dataReadKeys;
     }
 
     public ReadType kind()
@@ -112,7 +122,7 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
 
     protected abstract void cancel();
     protected abstract long executeAtEpoch();
-    protected abstract void reply(@Nullable Ranges unavailable, @Nullable Data data);
+    protected abstract void reply(@Nullable Ranges unavailable, @Nullable UnresolvedData data);
 
     protected void onAllReadsComplete() {}
 
@@ -148,9 +158,10 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
         {
             // TODO (expected, testing): test
             node.reply(replyTo, replyContext, ReadNack.Error);
-            data = null;
+            unresolvedData = null;
             // TODO (expected, exceptions): probably a better way to handle this, as might not be uncaught
             node.agent().onUncaughtException(failure);
+            unresolvedData = null;
             cancel();
         }
         else
@@ -174,16 +185,16 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
         if (-1 == --waitingOnCount)
         {
             onAllReadsComplete();
-            reply(this.unavailable, data);
+            reply(this.unavailable, unresolvedData);
         }
     }
 
-    protected synchronized void readComplete(CommandStore commandStore, @Nullable Data result, @Nullable Ranges unavailable)
+    protected synchronized void readComplete(CommandStore commandStore, @Nullable UnresolvedData result, @Nullable Ranges unavailable)
     {
         Invariants.checkState(waitingOn.get(commandStore.id()), "Txn %s's waiting on does not contain store %d; waitingOn=%s", txnId, commandStore.id(), waitingOn);
         logger.trace("{}: read completed on {}", txnId, commandStore);
         if (result != null)
-            data = data == null ? result : data.merge(result);
+            unresolvedData = unresolvedData == null ? result : unresolvedData.merge(result);
 
         waitingOn.clear(commandStore.id());
         ack(unavailable);
@@ -194,9 +205,10 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
         CommandStore unsafeStore = safeStore.commandStore();
         Ranges unavailable = safeStore.ranges().unsafeToReadAt(executeAt);
 
-        txn.read(safeStore, executeAt).begin((next, throwable) -> {
+        txn.read(safeStore, executeAt, dataReadKeys, followupRead).begin((next, throwable) -> {
             if (throwable != null)
             {
+                throwable.printStackTrace();
                 // TODO (expected, exceptions): should send exception to client, and consistency handle/propagate locally
                 logger.trace("{}: read failed for {}: {}", txnId, unsafeStore, throwable);
                 node.reply(replyTo, replyContext, ReadNack.Error);
@@ -256,18 +268,18 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
          */
         public final @Nullable Ranges unavailable;
 
-        public final @Nullable Data data;
+        public final @Nullable UnresolvedData unresolvedData;
 
-        public ReadOk(@Nullable Ranges unavailable, @Nullable Data data)
+        public ReadOk(@Nullable Ranges unavailable, @Nullable UnresolvedData unresolvedData)
         {
             this.unavailable = unavailable;
-            this.data = data;
+            this.unresolvedData = unresolvedData;
         }
 
         @Override
         public String toString()
         {
-            return "ReadOk{" + data + (unavailable == null ? "" : ", unavailable:" + unavailable) + '}';
+            return "ReadOk{" + unresolvedData + (unavailable == null ? "" : ", unavailable:" + unavailable) + '}';
         }
 
         @Override

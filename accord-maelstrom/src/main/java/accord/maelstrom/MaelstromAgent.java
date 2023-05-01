@@ -18,13 +18,18 @@
 
 package accord.maelstrom;
 
-import accord.local.Command;
-import accord.local.Node;
+import java.util.concurrent.TimeUnit;
+
 import accord.api.Agent;
 import accord.api.Result;
 import accord.primitives.*;
-
-import java.util.concurrent.TimeUnit;
+import accord.local.Command;
+import accord.local.Node;
+import accord.primitives.Keys;
+import accord.primitives.Seekables;
+import accord.primitives.Timestamp;
+import accord.primitives.Txn;
+import accord.primitives.TxnId;
 
 public class MaelstromAgent implements Agent
 {
@@ -71,6 +76,6 @@ public class MaelstromAgent implements Agent
     @Override
     public Txn emptyTxn(Txn.Kind kind, Seekables<?, ?> keysOrRanges)
     {
-        return new Txn.InMemory(kind, keysOrRanges, new MaelstromRead(Keys.EMPTY, Keys.EMPTY), new MaelstromQuery(Node.Id.NONE, -1), null);
+        return new Txn.InMemory(kind, keysOrRanges, new MaelstromRead(Keys.EMPTY, Keys.EMPTY), MaelstromData.EMPTY, new MaelstromQuery(Node.Id.NONE, -1), null);
     }
 }

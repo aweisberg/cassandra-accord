@@ -31,4 +31,5 @@ import accord.utils.async.AsyncChain;
 public interface Write
 {
     AsyncChain<Void> apply(Seekable key, SafeCommandStore safeStore, Timestamp executeAt, DataStore store);
+    boolean isEmpty();
 }

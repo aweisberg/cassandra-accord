@@ -18,29 +18,33 @@
 
 package accord.primitives;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 import accord.api.Write;
 import accord.local.SafeCommandStore;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import javax.annotation.Nonnull;
 
 public class Writes
 {
     public static final AsyncChain<Void> SUCCESS = AsyncChains.success(null);
     public final TxnId txnId;
     public final Timestamp executeAt;
+    // TODO don't these have to be keys so why Seekables?
     public final Seekables<?, ?> keys;
     public final Write write;
+    public final DataConsistencyLevel writeDataCL;
 
-    public Writes(TxnId txnId, Timestamp executeAt, Seekables<?, ?> keys, Write write)
+    public Writes(TxnId txnId, Timestamp executeAt, Seekables<?, ?> keys, Write write, @Nonnull DataConsistencyLevel writeDataCL)
     {
         this.txnId = txnId;
         this.executeAt = executeAt;
         this.keys = keys;
         this.write = write;
+        this.writeDataCL = writeDataCL;
     }
 
     @Override
@@ -49,7 +53,7 @@ public class Writes
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Writes writes = (Writes) o;
-        return executeAt.equals(writes.executeAt) && keys.equals(writes.keys) && write.equals(writes.write);
+        return txnId.equals(writes.txnId) && executeAt.equals(writes.executeAt) && keys.equals(writes.keys) && write.equals(writes.write) && writeDataCL.equals(writes.writeDataCL);
     }
 
     public boolean isEmpty()
@@ -60,7 +64,7 @@ public class Writes
     @Override
     public int hashCode()
     {
-        return Objects.hash(executeAt, keys, write);
+        return Objects.hash(txnId, executeAt, keys, write, writeDataCL);
     }
 
     public AsyncChain<Void> apply(SafeCommandStore safeStore, Ranges ranges)
@@ -82,9 +86,11 @@ public class Writes
     public String toString()
     {
         return "TxnWrites{" +
-               "executeAt:" + executeAt +
+               "txnId:" + txnId +
+               ", executeAt:" + executeAt +
                ", keys:" + keys +
                ", write:" + write +
+               ", writeDataCL:" + writeDataCL +
                '}';
     }
 }
