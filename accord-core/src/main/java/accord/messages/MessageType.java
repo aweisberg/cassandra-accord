@@ -48,7 +48,12 @@ public enum MessageType
     CHECK_STATUS_REQ        (false),
     CHECK_STATUS_RSP        (false),
     FETCH_DATA_REQ          (false),
-    FETCH_DATA_RSP          (false)
+    FETCH_DATA_RSP          (false),
+    // TODO validate that the side effect values are coorect
+    SET_LOCALLY_DURABLE_REQ (true),
+    SET_GLOBALLY_DURABLE_REQ(true),
+    QUERY_DURABLE_BEFORE_REQ(false),
+    QUERY_DURABLE_BEFORE_RSP(false),
     ;
 
     /**
