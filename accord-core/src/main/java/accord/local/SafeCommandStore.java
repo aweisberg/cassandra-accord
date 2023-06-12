@@ -189,6 +189,8 @@ public abstract class SafeCommandStore
      */
     public abstract SafeCommand ifLoadedAndInitialised(TxnId txnId);
 
+    public abstract boolean isLoaded(TxnId txnId);
+
     protected abstract SafeCommand get(TxnId txnId);
 
     public abstract boolean canExecuteWith(PreLoadContext context);

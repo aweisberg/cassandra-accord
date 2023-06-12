@@ -590,6 +590,12 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
 
         @Override
+        public boolean isLoaded(TxnId txnId)
+        {
+            return null != commandStore.ifPresent(txnId);
+        }
+
+        @Override
         protected InMemorySafeCommandsForKey getIfLoaded(RoutableKey key)
         {
             GlobalCommandsForKey global = commandStore.ifPresent((Key) key);
