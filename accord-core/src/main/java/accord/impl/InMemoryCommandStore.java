@@ -56,7 +56,6 @@ import accord.local.CommonAttributes;
 import accord.local.Listeners;
 import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
-import accord.local.RedundantBefore;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
@@ -73,7 +72,6 @@ import accord.primitives.Seekable;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
-import accord.utils.Functions;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
@@ -96,7 +94,7 @@ public abstract class InMemoryCommandStore extends CommandStore
 
     private final TreeMap<TxnId, RangeCommand> rangeCommands = new TreeMap<>();
     private final TreeMap<TxnId, Ranges> historicalRangeCommands = new TreeMap<>();
-    protected Timestamp maxErased = Timestamp.NONE;
+    protected Timestamp maxRedundant = Timestamp.NONE;
 
     private InMemorySafeStore current;
 
@@ -281,14 +279,18 @@ public abstract class InMemoryCommandStore extends CommandStore
 
         // TODO (now): apply on retrieval
         historicalRangeCommands.entrySet().removeIf(next -> next.getKey().compareTo(syncId) < 0 && next.getValue().intersects(ranges));
-        rangeCommands.entrySet().removeIf(next -> next.getKey().compareTo(syncId) < 0 && next.getValue().ranges.intersects(ranges));
+        rangeCommands.entrySet().removeIf(next -> {
+            if (!(next.getKey().compareTo(syncId) < 0 && next.getValue().ranges.intersects(ranges)))
+                return false;
+            maxRedundant = Timestamp.max(maxRedundant, next.getValue().command.value().executeAt());
+            return true;
+        });
         ranges.forEach(r -> {
             commandsForKey.subMap(r.start(), r.startInclusive(), r.end(), r.endInclusive()).values().forEach(forKey -> {
                 if (!forKey.isEmpty())
                     forKey.value(forKey.value().withoutRedundant(syncId));
             });
         });
-
     }
 
     protected InMemorySafeStore createSafeStore(PreLoadContext context, RangesForEpoch ranges, Map<TxnId, InMemorySafeCommand> commands, Map<RoutableKey, InMemorySafeCommandsForKey> commandsForKeys)
@@ -649,13 +651,12 @@ public abstract class InMemoryCommandStore extends CommandStore
                 if (command.ranges.intersects(sliced))
                     timestamp = Timestamp.nonNullOrMax(timestamp, command.command.value().executeAt());
             }
-            return Timestamp.nonNullOrMax(timestamp, commandStore.maxErased);
+            return Timestamp.nonNullOrMax(timestamp, commandStore.maxRedundant);
         }
 
         @Override
         public void erase(SafeCommand command)
         {
-            commandStore.maxErased = Timestamp.max(commandStore.maxErased, Functions.reduceNonNull(Timestamp::max, command.txnId(), command.current().executeAt()));
             commands.remove(command.txnId());
         }
 
