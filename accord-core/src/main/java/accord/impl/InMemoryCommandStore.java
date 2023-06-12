@@ -56,6 +56,7 @@ import accord.local.CommonAttributes;
 import accord.local.Listeners;
 import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
+import accord.local.RedundantBefore;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
@@ -95,7 +96,7 @@ public abstract class InMemoryCommandStore extends CommandStore
 
     private final TreeMap<TxnId, RangeCommand> rangeCommands = new TreeMap<>();
     private final TreeMap<TxnId, Ranges> historicalRangeCommands = new TreeMap<>();
-    protected Timestamp maxEvicted = Timestamp.NONE;
+    protected Timestamp maxErased = Timestamp.NONE;
 
     private InMemorySafeStore current;
 
@@ -434,9 +435,7 @@ public abstract class InMemoryCommandStore extends CommandStore
             GlobalCommand globalCommand = ifPresent(txnId);
             if (globalCommand != null)
                 return globalCommand.value();
-            // can only be missing because of truncation
-            // TODO (now): can we do better than this, and provide stronger guarantees?
-            return Command.NotDefined.uninitialised(txnId);
+            throw new IllegalStateException("Could not find command for CFK for " + txnId);
         }
 
         @Override
@@ -604,12 +603,6 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
 
         @Override
-        public boolean isLoaded(TxnId txnId)
-        {
-            return null != commandStore.ifPresent(txnId);
-        }
-
-        @Override
         protected InMemorySafeCommandsForKey getIfLoaded(RoutableKey key)
         {
             GlobalCommandsForKey global = commandStore.ifPresent((Key) key);
@@ -656,13 +649,13 @@ public abstract class InMemoryCommandStore extends CommandStore
                 if (command.ranges.intersects(sliced))
                     timestamp = Timestamp.nonNullOrMax(timestamp, command.command.value().executeAt());
             }
-            return Timestamp.nonNullOrMax(timestamp, commandStore.maxEvicted);
+            return Timestamp.nonNullOrMax(timestamp, commandStore.maxErased);
         }
 
         @Override
         public void erase(SafeCommand command)
         {
-            commandStore.maxEvicted = Timestamp.max(commandStore.maxEvicted, Functions.reduceNonNull(Timestamp::max, command.txnId(), command.current().executeAt()));
+            commandStore.maxErased = Timestamp.max(commandStore.maxErased, Functions.reduceNonNull(Timestamp::max, command.txnId(), command.current().executeAt()));
             commands.remove(command.txnId());
         }
 
