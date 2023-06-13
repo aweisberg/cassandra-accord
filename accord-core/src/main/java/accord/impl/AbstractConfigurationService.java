@@ -72,6 +72,9 @@ public abstract class AbstractConfigurationService<EpochState extends AbstractCo
         }
     }
 
+    /**
+     * Access needs to be synchronized by the parent ConfigurationService class
+     */
     @VisibleForTesting
     public abstract static class AbstractEpochHistory<EpochState extends AbstractEpochState>
     {
@@ -195,7 +198,7 @@ public abstract class AbstractConfigurationService<EpochState extends AbstractCo
 
     protected abstract EpochHistory createEpochHistory();
 
-    protected EpochState getOrCreateEpochState(long epoch)
+    protected synchronized EpochState getOrCreateEpochState(long epoch)
     {
         return epochs.getOrCreate(epoch);
     }
@@ -232,10 +235,20 @@ public abstract class AbstractConfigurationService<EpochState extends AbstractCo
     protected abstract void localSyncComplete(Topology topology);
 
     @Override
-    public synchronized void acknowledgeEpoch(EpochReady ready)
+    public void acknowledgeEpoch(EpochReady ready)
     {
-        ready.metadata.addCallback(() -> epochs.acknowledge(ready));
-        ready.coordination.addCallback(() ->  localSyncComplete(epochs.getOrCreate(ready.epoch).topology));
+        ready.metadata.addCallback(() -> {
+            synchronized (AbstractConfigurationService.this)
+            {
+                epochs.acknowledge(ready);
+            }
+        });
+        ready.coordination.addCallback(() ->  {
+            synchronized (AbstractConfigurationService.this)
+            {
+                localSyncComplete(epochs.getOrCreate(ready.epoch).topology);
+            }
+        });
     }
 
     protected void topologyUpdatePreListenerNotify(Topology topology) {}
