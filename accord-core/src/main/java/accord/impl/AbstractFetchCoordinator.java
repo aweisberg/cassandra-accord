@@ -84,7 +84,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         @Override
         public int hashCode()
         {
-            return id.hashCode() + ranges.hashCode();
+            return (31  + id.hashCode()) * 31 + ranges.hashCode();
         }
 
         @Override
@@ -125,7 +125,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         Key key = new Key(to, ranges);
         inflight.put(key, starting(to, ranges));
         Ranges ownedRanges = ownedRangesForNode(to);
-        Invariants.checkArgument(ownedRanges.containsAll(ranges));
+        Invariants.checkArgument(ownedRanges.containsAll(ranges), "Got a reply from %s for ranges %s, but owned ranges %s does not contain all the ranges", to, ranges, ownedRanges);
         PartialDeps partialDeps = syncPoint.waitFor.slice(ownedRanges, ranges);
         node.send(to, new FetchRequest(syncPoint.sourceEpoch(), syncPoint.syncId, ranges, partialDeps, rangeReadTxn(ranges)), new Callback<ReadData.ReadReply>()
         {
@@ -197,7 +197,7 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
     @Override
     protected void onDone(Ranges success, Throwable failure)
     {
-        if (success.isEmpty()) result.setFailure(failure);
+        if (failure != null || success.isEmpty()) result.setFailure(failure);
         else if (persisting.isEmpty()) result.setSuccess(Ranges.EMPTY);
         else AsyncChains.reduce(persisting, (a, b) -> null)
                         .begin((s, f) -> {

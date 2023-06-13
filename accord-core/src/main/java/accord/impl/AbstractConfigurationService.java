@@ -129,7 +129,7 @@ public abstract class AbstractConfigurationService<EpochState extends AbstractCo
                 next.addAll(epochs);
                 epochs = next;
                 minEpoch = minEpoch();
-                Invariants.checkState(minEpoch == epoch);
+                Invariants.checkState(minEpoch == epoch, "Epoch %d != %d", epoch, minEpoch);
             }
             long maxEpoch = maxEpoch();
             int idx = Ints.checkedCast(epoch - minEpoch);
@@ -184,7 +184,7 @@ public abstract class AbstractConfigurationService<EpochState extends AbstractCo
             Invariants.checkArgument(epoch <= maxEpoch(), "epoch %d > %d", epoch, maxEpoch());
             long minEpoch = minEpoch();
             int toTrim = Ints.checkedCast(epoch - minEpoch);
-            if (toTrim <=0)
+            if (toTrim <= 0)
                 return;
 
             epochs = new ArrayList<>(epochs.subList(toTrim, epochs.size()));

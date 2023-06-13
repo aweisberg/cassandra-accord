@@ -461,6 +461,7 @@ public abstract class InMemoryCommandStore extends CommandStore
         }
     }
 
+    @Override
     public AsyncChain<Timestamp> maxAppliedFor(Seekables<?, ?> keysOrRanges, Ranges slice)
     {
         Seekables<?, ?> sliced = keysOrRanges.slice(slice, Minimal);

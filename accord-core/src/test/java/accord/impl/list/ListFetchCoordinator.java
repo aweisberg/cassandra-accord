@@ -20,6 +20,7 @@ package accord.impl.list;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import accord.api.Data;
 import accord.api.DataStore;
@@ -48,7 +49,7 @@ public class ListFetchCoordinator extends AbstractFetchCoordinator
     @Override
     protected PartialTxn rangeReadTxn(Ranges ranges)
     {
-        return new PartialTxn.InMemory(ranges, Txn.Kind.Read, ranges, new ListRead(unsafeStore -> unsafeStore, ranges, ranges), new ListQuery(Node.Id.NONE, Long.MIN_VALUE), null);
+        return new PartialTxn.InMemory(ranges, Txn.Kind.Read, ranges, new ListRead(Function.identity(), ranges, ranges), new ListQuery(Node.Id.NONE, Long.MIN_VALUE), null);
     }
 
     @Override

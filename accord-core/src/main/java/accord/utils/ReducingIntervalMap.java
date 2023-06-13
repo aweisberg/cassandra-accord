@@ -18,8 +18,6 @@
 
 package accord.utils;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,6 +25,8 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Mostly copied/adapted from Cassandra's PaxosRepairHistory class
@@ -62,7 +62,11 @@ public class ReducingIntervalMap<K extends Comparable<? super K>, V>
     @VisibleForTesting
     ReducingIntervalMap(boolean inclusiveEnds, K[] ends, V[] values)
     {
-        Invariants.checkArgument(ends.length == values.length - 1);
+        if (ends.length != values.length - 1)
+            throw new IllegalArgumentException(String.format("Length %d != %d - 1; %s -> %s",
+                                                             ends.length, values.length,
+                                                             Arrays.toString(ends), Arrays.toString(values)));
+
         this.inclusiveEnds = inclusiveEnds;
         this.ends = ends;
         this.values = values;
@@ -115,18 +119,21 @@ public class ReducingIntervalMap<K extends Comparable<? super K>, V>
         return values[idx];
     }
 
-    public K key(int idx)
+    private void checkIndex(int idx)
     {
         if (idx < 0 || idx > size() - 1)
-            throw new IndexOutOfBoundsException();
+            throw new IndexOutOfBoundsException(String.format("%d < 0 or > %d - 1", idx, size()));
+    }
+
+    public K key(int idx)
+    {
+        checkIndex(idx);
         return ends[idx];
     }
 
     public V value(int idx)
     {
-        if (idx < 0 || idx > size())
-            throw new IndexOutOfBoundsException();
-
+        checkIndex(idx);
         return values[idx];
     }
 
