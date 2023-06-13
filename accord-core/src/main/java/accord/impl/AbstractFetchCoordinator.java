@@ -110,6 +110,11 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
         this.commandStore = commandStore;
     }
 
+    public CommandStore commandStore()
+    {
+        return commandStore;
+    }
+
     protected abstract PartialTxn rangeReadTxn(Ranges ranges);
 
     protected abstract void onReadOk(Node.Id from, CommandStore commandStore, Data data, Ranges ranges);
@@ -182,18 +187,6 @@ public abstract class AbstractFetchCoordinator extends FetchCoordinator
                 logger.error("Fetch coordination failure from " + from, failure);
             }
         });
-    }
-
-    @Override
-    protected synchronized void success(Node.Id to, Ranges ranges)
-    {
-        super.success(to, ranges);
-    }
-
-    @Override
-    protected synchronized void fail(Node.Id to, Ranges ranges, Throwable failure)
-    {
-        super.fail(to, ranges, failure);
     }
 
     public FetchResult result()
