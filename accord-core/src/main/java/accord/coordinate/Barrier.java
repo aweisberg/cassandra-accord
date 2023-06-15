@@ -18,7 +18,7 @@
 
 package accord.coordinate;
 
-import javax.annotation.Nonnull;
+import java.util.concurrent.ExecutionException;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -42,10 +42,12 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.utils.MapReduceConsume;
 import accord.utils.async.AsyncResults;
+import javax.annotation.Nonnull;
 
 import static accord.local.PreLoadContext.contextFor;
 import static accord.utils.Invariants.checkArgument;
 import static accord.utils.Invariants.checkState;
+import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 /**
  * Local or global barriers that return a result once all transactions have their side effects visible.
@@ -137,7 +139,14 @@ public class Barrier<S extends Seekables<?, ?>> extends AsyncResults.AbstractRes
 
     private void createSyncPoint()
     {
-        coordinateSyncPoint = CoordinateSyncPoint.inclusive(node, seekables, barrierType.async);
+        try
+        {
+            coordinateSyncPoint = getUninterruptibly(CoordinateSyncPoint.inclusive(node, seekables, barrierType.async));
+        }
+        catch (ExecutionException e)
+        {
+            tryFailure(e);
+        }
         coordinateSyncPoint.addCallback((syncPoint, syncPointFailure) -> {
             if (syncPointFailure != null)
             {
