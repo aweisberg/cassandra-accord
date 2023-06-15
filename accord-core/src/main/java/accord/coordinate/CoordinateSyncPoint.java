@@ -19,7 +19,6 @@
 package accord.coordinate;
 
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
 
 import org.slf4j.Logger;
@@ -38,7 +37,8 @@ import accord.primitives.Txn;
 import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
-import accord.utils.async.AsyncResults;
+import accord.utils.async.AsyncChains;
+import accord.utils.async.AsyncResult;
 
 import static accord.coordinate.Propose.Invalidate.proposeAndCommitInvalidate;
 import static accord.primitives.Timestamp.mergeMax;
@@ -46,7 +46,6 @@ import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
 import static accord.utils.Functions.foldl;
 import static accord.utils.Invariants.checkArgument;
 import static accord.utils.Invariants.checkState;
-import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 /**
  * Perform initial rounds of PreAccept and Accept until we have reached agreement about when we should execute.
@@ -71,9 +70,9 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
         this.async = async;
     }
 
-    public static <S extends Seekables<?, ?>> CoordinateSyncPoint<S> exclusive(Node node, S keysOrRanges)
+    public static <S extends Seekables<?, ?>> AsyncResult<CoordinateSyncPoint<S>> exclusive(Node node, S keysOrRanges)
     {
-        return coordinate(node, node.nextTxnId(ExclusiveSyncPoint, keysOrRanges.domain()), keysOrRanges, true);
+        return coordinate(node, ExclusiveSyncPoint, keysOrRanges, true);
     }
 
     public static <S extends Seekables<?, ?>> CoordinateSyncPoint<S> exclusive(Node node, TxnId txnId, S keysOrRanges)
@@ -81,28 +80,30 @@ public class CoordinateSyncPoint<S extends Seekables<?, ?>> extends CoordinatePr
         return coordinate(node, txnId, keysOrRanges, true);
     }
 
-    public static <S extends Seekables<?, ?>> CoordinateSyncPoint<S> inclusive(Node node, S keysOrRanges, boolean async)
+    public static <S extends Seekables<?, ?>> AsyncResult<CoordinateSyncPoint<S>> inclusive(Node node, S keysOrRanges, boolean async)
     {
-        return coordinate(node, node.nextTxnId(Kind.SyncPoint, keysOrRanges.domain()), keysOrRanges, async);
+        return coordinate(node, Kind.SyncPoint, keysOrRanges, async);
+    }
+
+    private static <S extends Seekables<?, ?>> AsyncResult<CoordinateSyncPoint<S>> coordinate(Node node, Kind kind, S keysOrRanges, boolean async)
+    {
+        checkState(kind == Kind.SyncPoint || kind == ExclusiveSyncPoint);
+        node.nextTxnId(Kind.SyncPoint, keysOrRanges.domain());
+        TxnId txnId = node.nextTxnId(kind, keysOrRanges.domain());
+        System.out.println("Requesting sync point coordination creation");
+        return node.withEpoch(txnId.epoch(), () ->
+                AsyncChains.success(coordinate(node, txnId, keysOrRanges, async))
+        ).beginAsResult();
     }
 
     private static <S extends Seekables<?, ?>> CoordinateSyncPoint<S> coordinate(Node node, TxnId txnId, S keysOrRanges, boolean async)
     {
+        System.out.println("Doing sync point coordination creation");
         checkState(txnId.rw() == Kind.SyncPoint || txnId.rw() == ExclusiveSyncPoint);
-        try
-        {
-            // withEpoch makes it messy to get back the CoordinateSyncPoint
-            return getUninterruptibly(node.withEpoch(txnId.epoch(), () -> {
-                FullRoute route = node.computeRoute(txnId, keysOrRanges);
-                CoordinateSyncPoint<S> coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(txnId.rw(), keysOrRanges), route, keysOrRanges, async);
-                coordinate.start();
-                return AsyncResults.success(coordinate);
-            }).beginAsResult());
-        }
-        catch (ExecutionException e)
-        {
-            throw new RuntimeException(e);
-        }
+        FullRoute route = node.computeRoute(txnId, keysOrRanges);
+        CoordinateSyncPoint<S> coordinate = new CoordinateSyncPoint(node, txnId, node.agent().emptyTxn(txnId.rw(), keysOrRanges), route, keysOrRanges, async);
+        coordinate.start();
+        return coordinate;
     }
 
     static <S extends Seekables<?, ?>> void blockOnDeps(Node node, Txn txn, TxnId txnId, FullRoute<?> route, S keysOrRanges, Deps deps, BiConsumer<SyncPoint<S>, Throwable> callback, boolean async)
