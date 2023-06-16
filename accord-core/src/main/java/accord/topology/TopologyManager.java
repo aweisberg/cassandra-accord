@@ -83,11 +83,22 @@ public class TopologyManager
             this.global = checkArgument(global, !global.isSubset());
             this.local = global.forNode(node).trim();
             Invariants.checkArgument(!global().isSubset());
-            this.curShardSyncComplete = new boolean[global.shards.length];
-            this.syncTracker = new QuorumTracker(new Single(sorter, global()));
-            this.newRanges = global.ranges.subtract(prevRanges);
-            this.prevSyncComplete = newRanges.with(prevSyncComplete);
-            this.curSyncComplete = this.syncComplete = newRanges;
+            if (global().size() > 0)
+            {
+                this.curShardSyncComplete = new boolean[global.shards.length];
+                this.syncTracker = new QuorumTracker(new Single(sorter, global()));
+                this.newRanges = global.ranges.subtract(prevRanges);
+                this.prevSyncComplete = newRanges.with(prevSyncComplete);
+                this.curSyncComplete = this.syncComplete = newRanges;
+            }
+            else
+            {
+                // TODO (review) this is a temporary fix until Benedict gets his eviction branch working
+                this.curShardSyncComplete = new boolean[0];
+                this.syncTracker = null;
+                this.newRanges = Ranges.EMPTY;
+                this.curSyncComplete = this.prevSyncComplete = this.syncComplete = Ranges.EMPTY;
+            }
         }
 
         boolean markPrevSynced(Ranges newPrevSyncComplete)

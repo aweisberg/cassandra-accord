@@ -99,6 +99,12 @@ public class ApplyThenWaitUntilApplied extends WaitUntilApplied
     }
 
     @Override
+    public MessageType type()
+    {
+        return MessageType.APPLY_AND_WAIT_UNTIL_APPLIED_REQ;
+    }
+
+    @Override
     protected void readComplete(CommandStore commandStore, Data readResult, Ranges unavailable)
     {
         logger.trace("{}: readComplete ApplyThenWaitUntilApplied", txnId);

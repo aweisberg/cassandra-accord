@@ -19,6 +19,7 @@
 package accord.messages;
 
 import java.util.BitSet;
+import javax.annotation.Nullable;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,6 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
-import javax.annotation.Nullable;
 
 import static accord.messages.MessageType.READ_RSP;
 import static accord.messages.TxnRequest.computeWaitForEpoch;
@@ -49,7 +49,8 @@ public abstract class ReadData extends AbstractEpochRequest<ReadNack>
     public enum ReadType
     {
         readTxnData(0),
-        applyThenWaitUntilApplied(1);
+        applyThenWaitUntilApplied(1),
+        waitUntilApplied(2);
 
         public final byte val;
 

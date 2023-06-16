@@ -72,6 +72,12 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     }
 
     @Override
+    public ReadType kind()
+    {
+        return ReadType.waitUntilApplied;
+    }
+
+    @Override
     protected long executeAtEpoch()
     {
         return executeAtEpoch;
