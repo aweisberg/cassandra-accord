@@ -18,8 +18,6 @@
 
 package accord.messages;
 
-import javax.annotation.Nullable;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +33,7 @@ import accord.primitives.Participants;
 import accord.primitives.Ranges;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
+import javax.annotation.Nullable;
 
 import static accord.local.Status.Committed;
 import static accord.local.Status.Known.Done;
@@ -69,6 +68,12 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     {
         super(txnId, readScope, waitForEpoch);
         this.executeAtEpoch = executeAtEpoch;
+    }
+
+    @Override
+    public ReadType kind()
+    {
+        return ReadType.waitUntilApplied;
     }
 
     @Override

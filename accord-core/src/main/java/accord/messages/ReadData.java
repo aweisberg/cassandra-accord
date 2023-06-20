@@ -20,6 +20,7 @@ package accord.messages;
 
 import java.util.BitSet;
 import javax.annotation.Nullable;
+import javax.annotation.Nullable;
 
 import accord.api.Data;
 import accord.primitives.Participants;
@@ -36,6 +37,8 @@ import accord.primitives.PartialTxn;
 import accord.primitives.Ranges;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
+import accord.topology.Topologies;
+import accord.utils.Invariants;
 
 import static accord.messages.MessageType.READ_RSP;
 import static accord.messages.TxnRequest.computeWaitForEpoch;

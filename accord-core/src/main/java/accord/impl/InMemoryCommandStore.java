@@ -75,12 +75,11 @@ import accord.primitives.TxnId;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
+import javax.annotation.Nullable;
 
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestDep.WITH;
-import static accord.local.Status.Applied;
 import static accord.local.Status.Committed;
-import static accord.local.Status.Invalidated;
 import static accord.local.Status.Truncated;
 import static accord.primitives.Routables.Slice.Minimal;
 
