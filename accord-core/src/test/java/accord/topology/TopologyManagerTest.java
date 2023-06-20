@@ -18,13 +18,19 @@
 
 package accord.topology;
 
-import accord.local.Node;
-import accord.primitives.Range;
-import accord.primitives.RoutingKeys;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static accord.Utils.*;
+import accord.local.Node;
+import accord.primitives.Range;
+import accord.primitives.RoutingKeys;
+
+import static accord.Utils.id;
+import static accord.Utils.idList;
+import static accord.Utils.idSet;
+import static accord.Utils.shard;
+import static accord.Utils.topologies;
+import static accord.Utils.topology;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.SizeOfIntersectionSorter.SUPPLIER;
@@ -164,7 +170,7 @@ public class TopologyManagerTest
         Assertions.assertFalse(service.getEpochStateUnsafe(2).syncComplete());
 
         RoutingKeys keys = keys(150).toParticipants();
-        Assertions.assertEquals(topologies(topology3.forSelection(keys), topology2.forSelection(keys), topology1.withEmptySubset()),
+        Assertions.assertEquals(topologies(topology3.forSelection(keys), topology2.forSelection(keys)),
                                 service.withUnsyncedEpochs(keys, 3, 3));
 
         service.onEpochSyncComplete(id(2), 2);
@@ -198,14 +204,15 @@ public class TopologyManagerTest
         service.onTopologyUpdate(topology3);
 
         // no acks, so all epoch 2 shards should be included
-        Assertions.assertEquals(topologies(topology3, topology2, topology1.withEmptySubset()),
+        Assertions.assertEquals(topologies(topology3, topology2),
                                 service.withUnsyncedEpochs(keys(150, 250).toParticipants(), 3, 3));
 
         // first topology acked, so only the second shard should be included
         service.onEpochSyncComplete(id(1), 2);
         service.onEpochSyncComplete(id(2), 2);
         Topologies actual = service.withUnsyncedEpochs(keys(150, 250).toParticipants(), 3, 3);
-        Assertions.assertEquals(topologies(topology3, topology(2, shard(range(200, 300), idList(4, 5, 6), idSet(4, 5))), topology1.withEmptySubset()),
+        Assertions.assertEquals(topologies(topology3, topology(2, shard(range(200, 300), idList(4, 5, 6), idSet(4, 5)))),
+                                actual);
         // TODO do we need changes from the Benedict side?
 //        service.onEpochSyncComplete(id(1), 2);
 //        service.onEpochSyncComplete(id(2), 2);

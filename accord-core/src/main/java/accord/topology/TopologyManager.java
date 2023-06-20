@@ -18,22 +18,29 @@
 
 package accord.topology;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Function;
+
+import com.google.common.annotations.VisibleForTesting;
+
 import accord.api.RoutingKey;
 import accord.api.TopologySorter;
 import accord.coordinate.tracking.QuorumTracker;
 import accord.local.CommandStore;
 import accord.local.Node.Id;
-import accord.primitives.*;
+import accord.primitives.Ranges;
+import accord.primitives.Timestamp;
+import accord.primitives.Unseekables;
 import accord.topology.Topologies.Single;
-import com.google.common.annotations.VisibleForTesting;
 import accord.utils.Invariants;
-import accord.utils.async.*;
-
-import java.util.*;
-import java.util.function.Function;
+import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 
 import static accord.coordinate.tracking.RequestStatus.Success;
-
 import static accord.primitives.Routables.Slice.Minimal;
 import static accord.utils.Invariants.checkArgument;
 import static accord.utils.Invariants.nonNull;
@@ -476,18 +483,14 @@ public class TopologyManager
         if (i == snapshot.epochs.length)
             return topologies;
 
-        // include any additional epochs to reach sufficiency
-        EpochState prev = snapshot.epochs[maxi - 1];
         do
         {
-            Ranges sufficient = isSufficientFor.apply(prev);
+            EpochState next = snapshot.epochs[i++];
+            Ranges sufficient = isSufficientFor.apply(next);
             remaining = remaining.subtract(sufficient);
             if (remaining.isEmpty())
                 return topologies;
-
-            EpochState next = snapshot.epochs[i++];
             topologies.add(next.global.forSelection(remaining));
-            prev = next;
         } while (i < snapshot.epochs.length);
 
         return topologies;
