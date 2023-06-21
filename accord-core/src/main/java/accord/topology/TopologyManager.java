@@ -26,6 +26,7 @@ import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 
+
 import accord.api.RoutingKey;
 import accord.api.TopologySorter;
 import accord.coordinate.tracking.QuorumTracker;
@@ -79,7 +80,14 @@ public class TopologyManager
             this.local = global.forNode(node).trim();
             Invariants.checkArgument(!global().isSubset());
             this.curShardSyncComplete = new boolean[global.shards.length];
-            this.syncTracker = new QuorumTracker(new Single(sorter, global()));
+            if (global().size() > 0)
+            {
+                this.syncTracker = new QuorumTracker(new Single(sorter, global()));
+            }
+            else
+            {
+                this.syncTracker = null;
+            }
             this.newRanges = global.ranges.subtract(prevRanges);
             this.prevSyncComplete = newRanges.with(prevSyncComplete);
             this.curSyncComplete = this.syncComplete = newRanges;

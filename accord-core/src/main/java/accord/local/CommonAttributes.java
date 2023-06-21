@@ -47,6 +47,7 @@ public interface CommonAttributes
         private Route<?> route;
         private ProgressShard progressShard;
         private PartialTxn partialTxn;
+        // TODO Nullability of partialDeps here and WaitingOn.deps needs to match in the empty case
         private PartialDeps partialDeps;
         private Listeners listeners;
 

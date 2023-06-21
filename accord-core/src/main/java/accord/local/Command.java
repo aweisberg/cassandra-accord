@@ -18,6 +18,12 @@
 
 package accord.local;
 
+import java.util.Objects;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
+import com.google.common.collect.ImmutableSortedSet;
+
 import accord.api.Data;
 import accord.api.ProgressLog.ProgressShard;
 import accord.primitives.Ballot;
@@ -34,18 +40,12 @@ import accord.utils.ImmutableBitSet;
 import accord.utils.IndexedQuadConsumer;
 import accord.utils.Invariants;
 
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
+import accord.utils.SimpleBitSet;
+import accord.utils.async.AsyncChain;
 
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.api.VisibleForImplementation;
-import accord.utils.SimpleBitSet;
-import accord.utils.async.AsyncChain;
-
-import com.google.common.collect.ImmutableSortedSet;
-
-import java.util.*;
 
 import static accord.api.ProgressLog.ProgressShard.Unsure;
 import static accord.local.Listeners.Immutable.EMPTY;
@@ -730,7 +730,7 @@ public abstract class Command implements CommonAttributes
         {
             super(common, status, executeAt, promised, accepted);
             this.waitingOn = waitingOn;
-            Invariants.checkState(waitingOn.deps.equals(common.partialDeps()));
+            Invariants.checkState((waitingOn.deps.isEmpty() && common.partialDeps() == null) || waitingOn.deps.equals(common.partialDeps()));
         }
 
         @Override

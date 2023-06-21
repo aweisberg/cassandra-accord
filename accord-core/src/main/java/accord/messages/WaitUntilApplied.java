@@ -71,12 +71,6 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     }
 
     @Override
-    public ReadType kind()
-    {
-        return ReadType.waitUntilApplied;
-    }
-
-    @Override
     protected long executeAtEpoch()
     {
         return executeAtEpoch;
@@ -242,7 +236,7 @@ public class WaitUntilApplied extends ReadData implements Command.TransientListe
     @Override
     public MessageType type()
     {
-        return MessageType.WAIT_FOR_APPLY_REQ;
+        return MessageType.WAIT_UNTIL_APPLIED_REQ;
     }
 
     @Override

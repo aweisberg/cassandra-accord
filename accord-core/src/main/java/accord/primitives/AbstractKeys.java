@@ -28,7 +28,10 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import accord.api.RoutingKey;
-import accord.utils.*;
+import accord.utils.IndexedFold;
+import accord.utils.IndexedFoldToLong;
+import accord.utils.Invariants;
+import accord.utils.SortedArrays;
 import net.nicoulaj.compilecommand.annotations.Inline;
 
 import static accord.primitives.Routable.Domain.Key;
@@ -237,7 +240,7 @@ public abstract class AbstractKeys<K extends RoutableKey> implements Iterable<K>
 
         RoutingKey[] result = toRoutingKeysArray(homeKey);
         int pos = Arrays.binarySearch(result, homeKey);
-        return new FullKeyRoute(result[pos], contains(homeKey), result);
+        return new FullKeyRoute(result[pos], pos >= 0, result);
     }
 
     protected RoutingKey[] toRoutingKeysArray(RoutingKey withKey)
