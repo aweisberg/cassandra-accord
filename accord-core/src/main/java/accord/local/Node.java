@@ -30,6 +30,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -76,8 +78,6 @@ import accord.utils.RandomSource;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 import net.nicoulaj.compilecommand.annotations.Inline;
 
 public class Node implements ConfigurationService.Listener, NodeTimeService
@@ -252,13 +252,9 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         }
         else
         {
-            System.out.println("Having to await epoch");
             configService.fetchTopologyForEpoch(epoch);
             AsyncChain<T> resultChain =  topology.awaitEpoch(epoch).flatMap(ignore -> supplier.get());
-            return resultChain.map(retval -> {
-                System.out.println("Successfully awaited epoch");
-                return retval;
-            });
+            return resultChain.map(retval -> retval);
         }
     }
 
