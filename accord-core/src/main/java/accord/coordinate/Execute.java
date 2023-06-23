@@ -32,6 +32,8 @@ import accord.api.Key;
 import accord.api.ResolveResult;
 import accord.api.Result;
 import accord.api.UnresolvedData;
+import accord.local.AgentExecutor;
+import accord.local.CommandStore;
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.messages.Callback;
@@ -211,7 +213,8 @@ class Execute extends ReadCoordinator<ReadReply>
         {
             ExternalTopology externalTopology = node.topology().globalForEpoch(executeAt.epoch()).externalTopology();
             AsyncChain<ResolveResult> resolveResultChain = txn.readResolver().resolve(executeAt, externalTopology, txn.read(), unresolvedData, getFollowupReader());
-            resolveResultChain.begin(this::onDataResolutionDone);
+            // ReadResolver is allowed to do its work on a different thread since it may need to use blocking idioms
+            resolveResultChain.withExecutor(CommandStore.current()).begin(this::onDataResolutionDone);
         }
         else
         {
@@ -221,6 +224,9 @@ class Execute extends ReadCoordinator<ReadReply>
 
     private FollowupReader getFollowupReader()
     {
+        // Run network callbacks in the current command store to satisfy the mechanism
+        // even though really they would be better run in the thread delivering the message
+        AgentExecutor currentCommandStore = CommandStore.current();
         return (read, to, callback) -> {
             // It's possible for the follow up read to be sent to the wrong replica
             // if the integration has a different view of cluster metadata during txn resolution
@@ -244,13 +250,13 @@ class Execute extends ReadCoordinator<ReadReply>
                 callback.onFailure(to, new IllegalArgumentException(key + " is not replicated by node " + to + " in executeAt epoch " + executeAt.epoch()));
                 return;
             }
-            if (!readScope.contains(key))
+            if (!txn.read().keys().contains(key))
             {
                 callback.onFailure(to, new IllegalArgumentException(key + " is not one of the read keys for this transaction"));
                 return;
             }
 
-            node.send(to, new ReadTxnData(to, topologies(), txnId, read.keys().toParticipants(), executeAt, null, read), new Callback<ReadReply>() {
+            node.send(to, new ReadTxnData(to, topologies(), txnId, read.keys().toParticipants(), executeAt, null, read), currentCommandStore, new Callback<ReadReply>() {
                 @Override
                 public void onSuccess(Id from, ReadReply reply)
                 {

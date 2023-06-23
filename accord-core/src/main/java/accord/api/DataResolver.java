@@ -40,5 +40,6 @@ public interface DataResolver
         void read(Read read, Id id, Callback<UnresolvedData> callback);
     }
 
+    // This resulting chain is allowed to complete on any thread
     AsyncChain<ResolveResult> resolve(Timestamp executeAt, ExternalTopology externalTopology, Read read, UnresolvedData unresolvedData, FollowupReader followUpReader);
 }
