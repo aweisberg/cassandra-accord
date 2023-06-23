@@ -490,7 +490,10 @@ public class TopologyManager
             remaining = remaining.subtract(sufficient);
             if (remaining.isEmpty())
                 return topologies;
-            topologies.add(next.global.forSelection(remaining));
+            if (next.global().shards().isEmpty())
+                topologies.add(next.global());
+            else
+                topologies.add(next.global.forSelection(remaining));
         } while (i < snapshot.epochs.length);
 
         return topologies;
