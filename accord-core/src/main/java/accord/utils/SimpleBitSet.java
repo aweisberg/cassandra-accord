@@ -308,6 +308,26 @@ public class SimpleBitSet
         }
     }
 
+    @Override
+    public boolean equals(Object o)
+    {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        SimpleBitSet that = (SimpleBitSet) o;
+
+        if (count != that.count) return false;
+        return Arrays.equals(bits, that.bits);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        int result = Arrays.hashCode(bits);
+        result = 31 * result + count;
+        return result;
+    }
+
     private int indexOf(int i)
     {
         int index = i >>> 6;
