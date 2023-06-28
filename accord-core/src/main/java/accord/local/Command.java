@@ -1000,6 +1000,30 @@ public abstract class Command implements CommonAttributes
             return toString(deps, waitingOnCommit, waitingOnApply);
         }
 
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            WaitingOn waitingOn = (WaitingOn) o;
+
+            if (!deps.equals(waitingOn.deps)) return false;
+            if (!waitingOnCommit.equals(waitingOn.waitingOnCommit)) return false;
+            if (!waitingOnApply.equals(waitingOn.waitingOnApply)) return false;
+            return appliedOrInvalidated.equals(waitingOn.appliedOrInvalidated);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            int result = deps.hashCode();
+            result = 31 * result + waitingOnCommit.hashCode();
+            result = 31 * result + waitingOnApply.hashCode();
+            result = 31 * result + appliedOrInvalidated.hashCode();
+            return result;
+        }
+
         public static class Update
         {
             final Deps deps;
