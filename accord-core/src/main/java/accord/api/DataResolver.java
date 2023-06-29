@@ -22,6 +22,7 @@ import accord.local.Node.Id;
 import accord.messages.Callback;
 import accord.primitives.Timestamp;
 import accord.utils.async.AsyncChain;
+import accord.utils.async.AsyncChains;
 
 /**
  * Process the result of Accord having performed a read and merge the results
@@ -31,6 +32,8 @@ import accord.utils.async.AsyncChain;
  */
 public interface DataResolver
 {
+    DataResolver NOOP = (executeAt, externalTopology, read, unresolvedData, followupReader) -> AsyncChains.success(new ResolveResult((Data)unresolvedData, null));
+
     /**
      * Allow the resolver to request additional or redundant/repeated data reads from specific nodes
      * in order to support things like read repair and short read protection.
