@@ -202,7 +202,7 @@ public class SimpleBitSet
 
     public int nextSetBit(int i, int ifNotFound)
     {
-        if (count == 0)
+        if (count == 0 || i >= bits.length)
             return ifNotFound;
 
         int index = indexOf(i);
