@@ -101,6 +101,7 @@ public class RedundantBefore extends ReducingRangeMap<RedundantBefore.Entry>
 
         static RedundantStatus mergeRedundant(Entry entry, RedundantStatus prev, TxnId txnId, EpochSupplier executeAt)
         {
+            // TODO (expected): this is identical to mergeLocallyRedundant
             if (prev == REDUNDANT || entry == null || entry.outOfBounds(txnId, executeAt))
                 return prev;
             return nonNullOrMin(prev, entry.get(txnId));
@@ -221,6 +222,7 @@ public class RedundantBefore extends ReducingRangeMap<RedundantBefore.Entry>
     public boolean isRedundant(TxnId txnId, Timestamp executeAt, Participants<?> participants)
     {
         if (executeAt == null) executeAt = txnId;
+        // TODO (expected): this calls mergeLocallyRedundant instead of mergeRedundant
         // essentially, if ANY intersecting key is REDUNDANT then this command has either applied locally or is invalidated;
         // otherwise, if ALL intersecting keys are PRE_BOOTSTRAP then any all of its effects will be reflected in the respective bootstraps that
         return notOwnedIfNull(foldl(participants, Entry::mergeLocallyRedundant, null, txnId, executeAt, test -> test == REDUNDANT)).compareTo(PRE_BOOTSTRAP) >= 0;
