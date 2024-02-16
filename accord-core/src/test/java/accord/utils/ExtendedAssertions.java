@@ -141,6 +141,22 @@ public class ExtendedAssertions
             objects.assertEqual(info, actual.ranges(), ranges);
             return myself;
         }
+
+        public TopologyAssert isEquivalentNonGlobal(Topology o)
+        {
+            if (actual == o) return myself;
+            objects.assertHasSameClassAs(info, actual, o);
+            Topology that = (Topology) o;
+            objects.assertEqual(info, actual.epoch(), that.epoch());
+            objects.assertEqual(info, actual.size(), that.size());
+            objects.assertEqual(info, actual.ranges(), that.ranges());
+
+            for (int i=0, mi=actual.size(); i<mi; i++)
+            {
+                objects.assertEqual(info, actual.get(i), that.get(i));
+            }
+            return myself;
+        }
     }
 
     public static class TopologiesAssert extends AbstractAssert<TopologiesAssert, Topologies>

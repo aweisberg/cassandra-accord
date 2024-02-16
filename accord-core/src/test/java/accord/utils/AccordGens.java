@@ -18,17 +18,6 @@
 
 package accord.utils;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.BiFunction;
-
-import javax.annotation.Nullable;
-
 import accord.api.Key;
 import accord.api.RoutingKey;
 import accord.impl.IntHashKey;
@@ -49,6 +38,16 @@ import accord.primitives.TxnId;
 import accord.topology.Shard;
 import accord.topology.Topology;
 import org.agrona.collections.IntHashSet;
+
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.BiFunction;
 
 import static accord.utils.Utils.toArray;
 
@@ -266,22 +265,22 @@ public class AccordGens
         };
     }
 
-    public static Gen<Topology> topologys()
+    public static Gen<Topology> globalTopologies()
     {
-        return topologys(epochs(), nodes());
+        return globalTopologies(epochs(), nodes());
     }
 
-    public static Gen<Topology> topologys(Gen.LongGen epochGen)
+    public static Gen<Topology> globalTopologies(Gen.LongGen epochGen)
     {
-        return topologys(epochGen, nodes());
+        return globalTopologies(epochGen, nodes());
     }
 
-    public static Gen<Topology> topologys(Gen.LongGen epochGen, Gen<Node.Id> nodeGen)
+    public static Gen<Topology> globalTopologies(Gen.LongGen epochGen, Gen<Node.Id> nodeGen)
     {
-        return topologys(epochGen, nodeGen, AccordGens::prefixedIntHashKeyRanges);
+        return globalTopologies(epochGen, nodeGen, AccordGens::prefixedIntHashKeyRanges);
     }
 
-    public static Gen<Topology> topologys(Gen.LongGen epochGen, Gen<Node.Id> nodeGen, RangesGenFactory rangesGenFactory)
+    public static Gen<Topology> globalTopologies(Gen.LongGen epochGen, Gen<Node.Id> nodeGen, RangesGenFactory rangesGenFactory)
     {
         return rs -> {
             long epoch = epochGen.nextLong(rs);
@@ -312,7 +311,7 @@ public class AccordGens
             if (!noShard.isEmpty())
                 throw new AssertionError(String.format("The following electorates were found without a shard: %s", noShard));
 
-            return new Topology(epoch, toArray(shards, Shard[]::new));
+            return Topology.createTestTopology(epoch, true, toArray(shards, Shard[]::new));
         };
     }
 

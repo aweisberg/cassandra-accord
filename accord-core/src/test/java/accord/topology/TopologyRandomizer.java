@@ -18,6 +18,24 @@
 
 package accord.topology;
 
+import accord.burn.TopologyUpdates;
+import accord.impl.PrefixedIntHashKey;
+import accord.impl.PrefixedIntHashKey.Hash;
+import accord.impl.PrefixedIntHashKey.PrefixedIntRoutingKey;
+import accord.local.Node;
+import accord.primitives.Range;
+import accord.primitives.Ranges;
+import accord.primitives.Routables;
+import accord.primitives.Timestamp;
+import accord.utils.Invariants;
+import accord.utils.RandomSource;
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Sets;
+import org.agrona.collections.IntHashSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,25 +48,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import javax.annotation.Nullable;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Sets;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import accord.burn.TopologyUpdates;
-import accord.impl.PrefixedIntHashKey;
-import accord.impl.PrefixedIntHashKey.Hash;
-import accord.impl.PrefixedIntHashKey.PrefixedIntRoutingKey;
-import accord.local.Node;
-import accord.primitives.Range;
-import accord.primitives.Ranges;
-import accord.primitives.Routables;
-import accord.primitives.Timestamp;
-import accord.utils.Invariants;
-import accord.utils.RandomSource;
-import org.agrona.collections.IntHashSet;
 
 
 // TODO (required, testing): add change replication factor
@@ -410,7 +409,7 @@ public class TopologyRandomizer
 
     private static boolean reassignsRanges(Topology current, Shard[] nextShards, Map<Node.Id, Ranges> previouslyReplicated)
     {
-        Topology next = new Topology(current.epoch + 1, nextShards);
+        Topology next = current.createNewTopology(current.epoch + 1, nextShards);
         Map<Node.Id, Ranges> additions = getAdditions(current, next);
 
         for (Map.Entry<Node.Id, Ranges> entry : additions.entrySet())
@@ -463,7 +462,7 @@ public class TopologyRandomizer
         if (newShards == oldShards)
             return null;
 
-        Topology nextTopology = new Topology(current.epoch + 1, newShards);
+        Topology nextTopology = current.createTestTopology(current.epoch + 1, true, newShards);
 
         Map<Node.Id, Ranges> nextAdditions = getAdditions(current, nextTopology);
         for (Map.Entry<Node.Id, Ranges> entry : nextAdditions.entrySet())

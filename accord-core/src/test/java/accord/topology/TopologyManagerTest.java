@@ -22,7 +22,10 @@ import accord.burn.TopologyUpdates;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.TestAgent;
 import accord.local.AgentExecutor;
+import accord.local.Node;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
 import accord.primitives.Unseekables;
 import accord.utils.AccordGens;
 import accord.utils.Gen;
@@ -33,10 +36,6 @@ import com.google.common.collect.Iterators;
 import org.agrona.collections.Long2ObjectHashMap;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import accord.local.Node;
-import accord.primitives.Range;
-import accord.primitives.RoutingKeys;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -50,12 +49,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import static accord.Utils.globalTopology;
 import static accord.Utils.id;
 import static accord.Utils.idList;
 import static accord.Utils.idSet;
 import static accord.Utils.shard;
 import static accord.Utils.topologies;
-import static accord.Utils.topology;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.SizeOfIntersectionSorter.SUPPLIER;
@@ -70,11 +69,11 @@ public class TopologyManagerTest
     @Test
     void rangeMovement()
     {
-        Topology t1 = topology(1,
+        Topology t1 = globalTopology(1,
                                shard(range(0, 100), idList(1, 2, 3), idSet(1, 2, 3)),
                                shard(range(100, 200), idList(3, 4, 5), idSet(3, 4, 5)));
         // 2 and 4 flip
-        Topology t2 = topology(2,
+        Topology t2 = globalTopology(2,
                                shard(range(0, 100), idList(1, 3, 4), idSet(1, 3, 4)),
                                shard(range(100, 200), idList(2, 3, 5), idSet(2, 3, 5)));
         int[] unmoved = { 1, 3, 5 };
@@ -102,8 +101,8 @@ public class TopologyManagerTest
     void fastPathReconfiguration()
     {
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
 
         TopologyManager service = new TopologyManager(SUPPLIER, ID);
 
@@ -123,10 +122,10 @@ public class TopologyManagerTest
 
     private static TopologyManager tracker()
     {
-        Topology topology1 = topology(1,
+        Topology topology1 = globalTopology(1,
                                       shard(range(100, 200), idList(1, 2, 3), idSet(1, 2)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(4, 5)));
-        Topology topology2 = topology(2,
+        Topology topology2 = globalTopology(2,
                                       shard(range(100, 200), idList(1, 2, 3), idSet(3, 4)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(4, 5)));
 
@@ -157,9 +156,9 @@ public class TopologyManagerTest
     void existingEpochPendingSync()
     {
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
-        Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
+        Topology topology3 = globalTopology(3, shard(range, idList(1, 2, 3), idSet(1, 2)));
 
         TopologyManager service = new TopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(topology1, () -> null);
@@ -194,8 +193,8 @@ public class TopologyManagerTest
     void futureEpochPendingSync()
     {
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
 //        Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(3, 4)));
 
         TopologyManager service = new TopologyManager(SUPPLIER, ID);
@@ -216,9 +215,9 @@ public class TopologyManagerTest
     void forKeys()
     {
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(2, 3)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology3 = globalTopology(3, shard(range, idList(1, 2, 3), idSet(2, 3)));
 
         TopologyManager service = new TopologyManager(SUPPLIER, ID);
 
@@ -243,10 +242,10 @@ public class TopologyManagerTest
     @Test
     void incompleteTopologyHistory()
     {
-        Topology topology5 = topology(5,
+        Topology topology5 = globalTopology(5,
                                       shard(range(100, 200), idList(1, 2, 3), idSet(1, 2)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(4, 5)));
-        Topology topology6 = topology(6,
+        Topology topology6 = globalTopology(6,
                                       shard(range(100, 200), idList(1, 2, 3), idSet(1, 2)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(5, 6)));
 
@@ -279,10 +278,10 @@ public class TopologyManagerTest
     {
         Range range = range(100, 200);
         TopologyManager service = new TopologyManager(SUPPLIER, ID);
-        addAndMarkSynced(service, topology(1, shard(range, idList(1, 2, 3), idSet(1, 2))));
-        addAndMarkSynced(service, topology(2, shard(range, idList(1, 2, 3), idSet(2, 3))));
-        addAndMarkSynced(service, topology(3, shard(range, idList(1, 2, 3), idSet(1, 2))));
-        addAndMarkSynced(service, topology(4, shard(range, idList(1, 2, 3), idSet(1, 3))));
+        addAndMarkSynced(service, globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2))));
+        addAndMarkSynced(service, globalTopology(2, shard(range, idList(1, 2, 3), idSet(2, 3))));
+        addAndMarkSynced(service, globalTopology(3, shard(range, idList(1, 2, 3), idSet(1, 2))));
+        addAndMarkSynced(service, globalTopology(4, shard(range, idList(1, 2, 3), idSet(1, 3))));
 
         Assertions.assertTrue(service.hasEpoch(1));
         Assertions.assertTrue(service.hasEpoch(2));
@@ -310,15 +309,15 @@ public class TopologyManagerTest
             long epochCounter = rs.nextInt(1, 42);
             boolean withUnchange = rs.nextBoolean();
             List<Topology> topologies = new ArrayList<>(withUnchange ? 3 : 2);
-            topologies.add(topology(epochCounter++,
-                                    shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
-                                    shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));
+            topologies.add(globalTopology(epochCounter++,
+                                          shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
+                                          shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));
             if (withUnchange)
-                topologies.add(topology(epochCounter++,
-                                        shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
-                                        shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));
-            topologies.add(topology(epochCounter++,
-                                    shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));;
+                topologies.add(globalTopology(epochCounter++,
+                                              shard(PrefixedIntHashKey.range(0, 0, 100), idList(1, 2, 3), idSet(1, 2)),
+                                              shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));
+            topologies.add(globalTopology(epochCounter++,
+                                          shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));;
             History history = new History(new TopologyManager(SUPPLIER, ID), topologies.iterator()) {
 
                 @Override
@@ -370,12 +369,12 @@ public class TopologyManagerTest
         Set<Node.Id> dc1Fp = idSet(1, 2);
         List<Node.Id> dc2Nodes = idList(4, 5, 6);
         Set<Node.Id> dc2Fp = idSet(4, 5);
-        addAndMarkSynced(service, topology(1,
+        addAndMarkSynced(service, globalTopology(1,
                 shard(PrefixedIntHashKey.range(0, 0, 100), dc2Nodes, dc2Fp),
                 shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
-        addAndMarkSynced(service, topology(2,
+        addAndMarkSynced(service, globalTopology(2,
                 shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
-        addAndMarkSynced(service, topology(3,
+        addAndMarkSynced(service, globalTopology(3,
                 shard(PrefixedIntHashKey.range(0, 0, 100), dc2Nodes, dc2Fp),
                 shard(PrefixedIntHashKey.range(1, 0, 100), dc1Nodes, dc1Fp)));
 
@@ -400,7 +399,7 @@ public class TopologyManagerTest
     @Test
     void fuzz()
     {
-        Gen<Topology> firstTopology = AccordGens.topologys(Gens.longs().between(1, 1024)); // limit the epochs between 1-1024, so it is easier to tell the difference while in a debugger
+        Gen<Topology> firstTopology = AccordGens.globalTopologies(Gens.longs().between(1, 1024)); // limit the epochs between 1-1024, so it is easier to tell the difference while in a debugger
         AgentExecutor executor = Mockito.mock(AgentExecutor.class, Mockito.withSettings().defaultAnswer(ignore -> { throw new IllegalStateException("Attempted to perform async operation"); }));
         Mockito.doReturn(new TestAgent.RethrowAgent()).when(executor).agent();
         qt().withExamples(20).check(rs -> {

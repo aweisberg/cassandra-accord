@@ -133,7 +133,7 @@ public class ReadTrackerTest
     @Test
     void multiShardSuccess()
     {
-        Topology subTopology = new Topology(1, topology.get(0), topology.get(1), topology.get(2));
+        Topology subTopology = Topology.createTestTopology(1, topology.get(0), topology.get(1), topology.get(2));
         ReadTracker responses = new AutoReadTracker(topologies(subTopology));
         /*
         (000, 100](100, 200](200, 300]
@@ -148,7 +148,7 @@ public class ReadTrackerTest
     @Test
     void multiShardRetryAndReadSet()
     {
-        Topology subTopology = new Topology(1, topology.get(0), topology.get(1), topology.get(2));
+        Topology subTopology = Topology.createTestTopology(1, topology.get(0), topology.get(1), topology.get(2));
         ReadTracker responses = new TestReadTracker(topologies(subTopology));
         /*
         (000, 100](100, 200](200, 300]

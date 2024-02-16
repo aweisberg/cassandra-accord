@@ -18,15 +18,6 @@
 
 package accord;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-
-import com.google.common.collect.Sets;
-
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Scheduler;
@@ -61,8 +52,16 @@ import accord.utils.DefaultRandom;
 import accord.utils.EpochFunction;
 import accord.utils.Invariants;
 import accord.utils.ThreadPoolScheduler;
+import com.google.common.collect.Sets;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ThrowingRunnable;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
@@ -145,7 +144,12 @@ public class Utils
 
     public static Topology topology(long epoch, Shard... shards)
     {
-        return new Topology(epoch, shards);
+        return Topology.createTestTopology(epoch, shards);
+    }
+
+    public static Topology globalTopology(long epoch, Shard... shards)
+    {
+        return Topology.createTestTopology(epoch, true, shards);
     }
 
     public static Topology topology(Shard... shards)

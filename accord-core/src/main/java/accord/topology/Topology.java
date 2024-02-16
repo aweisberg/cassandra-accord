@@ -18,6 +18,24 @@
 
 package accord.topology;
 
+import accord.api.RoutingKey;
+import accord.local.Node.Id;
+import accord.primitives.Range;
+import accord.primitives.Ranges;
+import accord.primitives.Routables;
+import accord.primitives.Unseekables;
+import accord.utils.ArrayBuffers;
+import accord.utils.ArrayBuffers.IntBuffers;
+import accord.utils.IndexedBiFunction;
+import accord.utils.IndexedConsumer;
+import accord.utils.IndexedIntFunction;
+import accord.utils.IndexedTriFunction;
+import accord.utils.Utils;
+import com.google.common.annotations.VisibleForTesting;
+import org.agrona.collections.IntArrayList;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,25 +51,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
-import com.google.common.annotations.VisibleForTesting;
-
-import accord.api.RoutingKey;
-import accord.local.Node.Id;
-import accord.primitives.Range;
-import accord.primitives.Ranges;
-import accord.primitives.Routables;
-import accord.primitives.Unseekables;
-import accord.utils.ArrayBuffers;
-import accord.utils.ArrayBuffers.IntBuffers;
-import accord.utils.IndexedBiFunction;
-import accord.utils.IndexedConsumer;
-import accord.utils.IndexedIntFunction;
-import accord.utils.IndexedTriFunction;
-import accord.utils.Utils;
-import org.agrona.collections.IntArrayList;
-
-import javax.annotation.Nullable;
-
+import static accord.utils.Invariants.checkState;
 import static accord.utils.Invariants.illegalArgument;
 import static accord.utils.SortedArrays.Search.FLOOR;
 import static accord.utils.SortedArrays.exponentialSearch;
@@ -61,8 +61,8 @@ public class Topology
     public static final long EMPTY_EPOCH = 0;
     private static final int[] EMPTY_SUBSET = new int[0];
     public static final Topology EMPTY = new Topology(null, EMPTY_EPOCH, new Shard[0], Ranges.EMPTY, Collections.emptyMap(), Ranges.EMPTY, EMPTY_SUBSET);
-    final long epoch;
-    final Shard[] shards;
+    protected final long epoch;
+    protected final Shard[] shards;
     final Ranges ranges;
     /**
      * TODO (desired, efficiency): do not recompute nodeLookup for sub-topologies
@@ -79,9 +79,15 @@ public class Topology
      * When the field is {@code null} use {@code this}, else use the value referenced; in most cases using {@link #global()} is best.
      */
     @Nullable
-    final Topology global;
+    final transient Topology global;
 
-    static class NodeInfo
+    /**
+     * Global being null doesn't mean a topology is global because when sent through messaging the global
+     * field is dropped so track it here so calls to global() can validate a real global topology is being returned
+     */
+    final boolean isGlobal;
+
+    public static class NodeInfo
     {
         final Ranges ranges;
         final int[] supersetIndexes;
@@ -116,9 +122,10 @@ public class Topology
         }
     }
 
-    public Topology(long epoch, Shard... shards)
+    protected Topology(long epoch, Topology global, boolean isGlobal, Shard... shards)
     {
-        this.global = null;
+        this.global = global;
+        this.isGlobal = isGlobal;
         this.epoch = epoch;
         this.ranges = Ranges.ofSortedAndDeoverlapped(Arrays.stream(shards).map(shard -> shard.range).toArray(Range[]::new));
         this.shards = shards;
@@ -139,10 +146,10 @@ public class Topology
         }
     }
 
-    @VisibleForTesting
-    Topology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, Map<Id, NodeInfo> nodeLookup, Ranges subsetOfRanges, int[] supersetIndexes)
+    protected Topology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, Map<Id, NodeInfo> nodeLookup, Ranges subsetOfRanges, int[] supersetIndexes)
     {
         this.global = global;
+        this.isGlobal = false;
         this.epoch = epoch;
         this.shards = shards;
         this.ranges = ranges;
@@ -151,9 +158,47 @@ public class Topology
         this.supersetIndexes = supersetIndexes;
     }
 
-    public Topology global()
+    // Allow integration to inject its own Topology class potentially with additional state
+    protected Topology createNewTopology(long epoch, Shard... shards)
     {
+        return createNewTopology(epoch, null, false, shards);
+    }
+
+    protected Topology createNewTopology(long epoch, Topology global, boolean isGlobal, Shard... shards)
+    {
+        return new Topology(epoch, global, isGlobal, shards);
+    }
+
+    protected Topology createNewTopology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, Map<Id, NodeInfo> nodeLookup, Ranges subsetOfRanges, int[] supersetIndexes)
+    {
+        return new Topology(global, epoch, shards, ranges, nodeLookup, subsetOfRanges, supersetIndexes);
+    }
+
+    // Allow Accord test code to construct Topologies. Should not be used from non-test since that will break the integration which uses a derived class.
+    public static Topology createTestTopology(@Nullable Topology global, long epoch, Shard[] shards, Ranges ranges, Map<Id, NodeInfo> nodeLookup, Ranges subsetOfRanges, int[] supersetIndexes)
+    {
+        return new Topology(global, epoch, shards, ranges, nodeLookup, subsetOfRanges, supersetIndexes);
+    }
+
+    public static Topology createTestTopology(long epoch, Shard... shards)
+    {
+        return new Topology(epoch, null, false, shards);
+    }
+
+    public static Topology createTestTopology(long epoch, boolean isGlobal, Shard... shards)
+    {
+        return new Topology(epoch, null, isGlobal, shards);
+    }
+
+    public @Nonnull Topology global()
+    {
+        checkState(global != null || isGlobal, "Reference to global topology is null and this is not a global topology");
         return global == null ? this : global;
+    }
+
+    public boolean isGlobal()
+    {
+        return isGlobal;
     }
 
     @Override
@@ -168,7 +213,7 @@ public class Topology
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Topology that = (Topology) o;
-        if (this.epoch != that.epoch || this.size() != that.size() || !this.subsetOfRanges.equals(that.subsetOfRanges))
+        if (this.epoch != that.epoch || this.size() != that.size() || !this.subsetOfRanges.equals(that.subsetOfRanges) || this.isGlobal != that.isGlobal)
             return false;
 
         for (int i=0, mi=this.size(); i<mi; i++)
@@ -187,12 +232,12 @@ public class Topology
         return result;
     }
 
-    private static Topology select(long epoch, Shard[] shards, int[] indexes)
+    private Topology select(long epoch, Shard[] shards, int[] indexes)
     {
         Shard[] subset = new Shard[indexes.length];
         for (int i = 0; i < indexes.length; i++)
             subset[i] = shards[indexes[i]];
-        return new Topology(epoch, subset);
+        return createNewTopology(epoch, global(), false, subset);
     }
 
     public boolean isSubset()
@@ -213,11 +258,13 @@ public class Topology
 
         Map<Id, NodeInfo> lookup = new LinkedHashMap<>();
         lookup.put(node, info);
-        return new Topology(global(), epoch, shards, ranges, lookup, info.ranges, info.supersetIndexes);
+        return createNewTopology(global(), epoch, shards, ranges, lookup, info.ranges, info.supersetIndexes);
     }
 
     public Topology trim()
     {
+        if (this == EMPTY)
+            return this;
         return select(epoch, shards, this.supersetIndexes);
     }
 
@@ -269,7 +316,7 @@ public class Topology
             for (Id id : shard.nodes)
                 nodeLookup.putIfAbsent(id, this.nodeLookup.get(id).forSubset(newSubset));
         }
-        return new Topology(global(), epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
+        return createNewTopology(global(), epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
     }
 
     @VisibleForTesting
@@ -283,7 +330,7 @@ public class Topology
             if (info.ranges.isEmpty()) continue;
             nodeLookup.put(id, info);
         }
-        return new Topology(global(), epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
+        return createNewTopology(global(), epoch, shards, ranges, nodeLookup, rangeSubset, newSubset);
     }
 
     private int[] subsetFor(Unseekables<?> select)

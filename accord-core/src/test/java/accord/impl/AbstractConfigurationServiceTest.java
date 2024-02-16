@@ -185,7 +185,7 @@ public class AbstractConfigurationServiceTest
 
     private static Topology topology(long epoch, Range range, List<Id> nodes, Set<Id> fastPath)
     {
-        return new Topology(epoch, shard(range, nodes, fastPath));
+        return Topology.createTestTopology(epoch, shard(range, nodes, fastPath));
     }
 
     private static Topology topology(long epoch, Id... fastPath)

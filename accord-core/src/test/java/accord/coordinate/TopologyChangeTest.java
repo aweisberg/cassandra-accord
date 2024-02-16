@@ -22,24 +22,27 @@ import accord.impl.mock.MockCluster;
 import accord.impl.mock.MockConfigurationService;
 import accord.local.Command;
 import accord.local.Node;
-import accord.primitives.Range;
-import accord.topology.Topology;
 import accord.primitives.Keys;
+import accord.primitives.Range;
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
+import accord.topology.Topology;
 import accord.utils.EpochFunction;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.ExecutionException;
 
-import static accord.Utils.*;
+import static accord.Utils.globalTopology;
+import static accord.Utils.idList;
+import static accord.Utils.idSet;
+import static accord.Utils.shard;
+import static accord.Utils.writeTxn;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
+import static accord.local.PreLoadContext.contextFor;
 import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Txn.Kind.Write;
-
-import static accord.local.PreLoadContext.contextFor;
 import static accord.utils.async.AsyncChains.getUninterruptibly;
 
 public class TopologyChangeTest
@@ -49,8 +52,8 @@ public class TopologyChangeTest
     {
         Keys keys = keys(150);
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(3, 4, 5), idSet(4, 5)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(3, 4, 5), idSet(4, 5)));
         EpochFunction<MockConfigurationService> fetchTopology = (epoch, service) -> {
             Assertions.assertEquals(2, epoch);
             service.reportTopology(topology2);

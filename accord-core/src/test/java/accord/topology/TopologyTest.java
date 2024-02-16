@@ -24,11 +24,12 @@ import accord.api.RoutingKey;
 import accord.impl.IntKey;
 import accord.impl.TopologyFactory;
 import accord.local.Node;
-import accord.primitives.Range;
 import accord.primitives.Keys;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.RoutingKeys;
 import accord.primitives.Unseekables;
+import accord.utils.AccordGens;
 import accord.utils.Gens;
 import accord.utils.RandomSource;
 import com.google.common.collect.Iterables;
@@ -45,10 +46,9 @@ import java.util.function.Consumer;
 import static accord.topology.TopologyUtils.routingKey;
 import static accord.topology.TopologyUtils.routingKeyOutsideRange;
 import static accord.topology.TopologyUtils.withEpoch;
-import static accord.utils.AccordGens.topologys;
-import static org.assertj.core.api.Assertions.assertThat;
 import static accord.utils.ExtendedAssertions.assertThat;
 import static accord.utils.Property.qt;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TopologyTest
@@ -116,7 +116,7 @@ public class TopologyTest
     @Test
     void basic()
     {
-        qt().withExamples(100).forAll(topologys(), Gens.random()).check((topology, rs) -> {
+        qt().withExamples(100).forAll(AccordGens.globalTopologies(), Gens.random()).check((topology, rs) -> {
             assertThat(topology)
                     .isNotSubset()
                     .isEqualTo(withEpoch(topology, topology.epoch))
@@ -225,6 +225,6 @@ public class TopologyTest
                         .hasMessage("Range not found for %s", outsideRange);
             }
         }
-        assertThat(topology.forSelection(topology.ranges())).isEqualTo(topology);
+        assertThat(topology.forSelection(topology.ranges())).isEquivalentNonGlobal(topology);
     }
 }

@@ -21,8 +21,8 @@ package accord.topology;
 import accord.api.RoutingKey;
 import accord.impl.IntKey;
 import accord.impl.PrefixedIntHashKey;
-import accord.primitives.Range;
 import accord.local.Node;
+import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.RoutingKeys;
 import accord.primitives.Unseekables;
@@ -34,8 +34,17 @@ import accord.utils.WrapAroundList;
 import accord.utils.WrapAroundSet;
 
 import javax.annotation.Nullable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
+import static accord.utils.Invariants.checkArgument;
 import static accord.utils.Utils.toArray;
 
 public class TopologyUtils
@@ -56,7 +65,19 @@ public class TopologyUtils
 
     public static Topology withEpoch(Topology topology, long epoch)
     {
-        return new Topology(topology.global == null ? null : withEpoch(topology.global, epoch), epoch, topology.shards, topology.ranges, topology.nodeLookup, topology.subsetOfRanges, topology.supersetIndexes);
+        if (topology.global == null)
+        {
+            // This isn't strictly true since we don't serialize the global topology reference and boolean, but should be true for most test scenarios
+            checkArgument(topology.isGlobal);
+            // If it's global these should be set to these values
+            checkArgument(topology.subsetOfRanges == topology.ranges);
+            checkArgument(topology.supersetIndexes.length == topology.shards.length);
+            return Topology.createTestTopology(epoch, true, topology.shards);
+        }
+        else
+        {
+            return Topology.createTestTopology(withEpoch(topology.global, epoch), epoch, topology.shards, topology.ranges, topology.nodeLookup, topology.subsetOfRanges, topology.supersetIndexes);
+        }
     }
 
     public static Topology topology(long epoch, List<Node.Id> cluster, Ranges ranges, int rf)
@@ -91,7 +112,7 @@ public class TopologyUtils
         if (!noShard.isEmpty())
             throw new AssertionError(String.format("The following electorates were found without a shard: %s", noShard));
 
-        return new Topology(epoch, toArray(shards, Shard[]::new));
+        return Topology.createTestTopology(epoch, true, toArray(shards, Shard[]::new));
     }
 
     public static Topology initialTopology(Node.Id[] cluster, Ranges ranges, int rf)

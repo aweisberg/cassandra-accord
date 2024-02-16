@@ -19,16 +19,20 @@
 package accord.messages;
 
 import accord.api.TopologySorter;
-import accord.primitives.Range;
 import accord.primitives.FullKeyRoute;
+import accord.primitives.Keys;
 import accord.primitives.PartialKeyRoute;
+import accord.primitives.Range;
 import accord.topology.Topologies;
 import accord.topology.Topology;
-import accord.primitives.Keys;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static accord.Utils.*;
+import static accord.Utils.globalTopology;
+import static accord.Utils.id;
+import static accord.Utils.idList;
+import static accord.Utils.idSet;
+import static accord.Utils.shard;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
 import static accord.impl.IntKey.scope;
@@ -41,8 +45,8 @@ public class TxnRequestScopeTest
         Keys keys = keys(150);
         FullKeyRoute route = keys.toRoute(keys.get(0).toUnseekable());
         Range range = range(100, 200);
-        Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
-        Topology topology2 = topology(2, shard(range, idList(3, 4, 5), idSet(4, 5)));
+        Topology topology1 = globalTopology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
+        Topology topology2 = globalTopology(2, shard(range, idList(3, 4, 5), idSet(4, 5)));
 
         Topologies.Multi topologies = new Topologies.Multi((TopologySorter.StaticSorter)(a, b, s)->0, topology2, topology1);
 
@@ -65,11 +69,11 @@ public class TxnRequestScopeTest
 
         Range range1 = range(100, 200);
         Range range2 = range(200, 300);
-        Topology topology1 = topology(1,
+        Topology topology1 = globalTopology(1,
                                       shard(range1, idList(1, 2, 3), idSet(1, 2)),
                                       shard(range2, idList(4, 5, 6), idSet(4, 5)) );
         // reverse ownership
-        Topology topology2 = topology(2,
+        Topology topology2 = globalTopology(2,
                                       shard(range1, idList(4, 5, 6), idSet(4, 5)),
                                       shard(range2, idList(1, 2, 3), idSet(1, 2)) );
 
