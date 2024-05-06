@@ -18,27 +18,6 @@
 
 package accord.topology;
 
-import accord.burn.TopologyUpdates;
-import accord.impl.PrefixedIntHashKey;
-import accord.impl.TestAgent;
-import accord.local.AgentExecutor;
-import accord.primitives.Ranges;
-import accord.primitives.Unseekables;
-import accord.utils.AccordGens;
-import accord.utils.Gen;
-import accord.utils.Gens;
-import accord.utils.RandomSource;
-import com.google.common.collect.AbstractIterator;
-import com.google.common.collect.Iterators;
-import org.agrona.collections.Long2ObjectHashMap;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
-import accord.local.Node;
-import accord.primitives.Range;
-import accord.primitives.RoutingKeys;
-import org.mockito.Mockito;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
@@ -50,10 +29,32 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterators;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+import accord.burn.TopologyUpdates;
+import accord.impl.PrefixedIntHashKey;
+import accord.impl.TestAgent;
+import accord.local.AgentExecutor;
+import accord.local.Node;
+import accord.primitives.Range;
+import accord.primitives.Ranges;
+import accord.primitives.RoutingKeys;
+import accord.primitives.Unseekables;
+import accord.utils.AccordGens;
+import accord.utils.Gen;
+import accord.utils.Gens;
+import accord.utils.RandomSource;
+import org.agrona.collections.Long2ObjectHashMap;
+import org.mockito.Mockito;
+
 import static accord.Utils.id;
 import static accord.Utils.idList;
 import static accord.Utils.idSet;
 import static accord.Utils.shard;
+import static accord.Utils.testTopologyManager;
 import static accord.Utils.topologies;
 import static accord.Utils.topology;
 import static accord.impl.IntKey.keys;
@@ -79,7 +80,7 @@ public class TopologyManagerTest
                                shard(range(100, 200), idList(2, 3, 5), idSet(2, 3, 5)));
         int[] unmoved = { 1, 3, 5 };
         int[] moved = { 2, 4 };
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(t1, () -> null);
         service.onTopologyUpdate(t2, () -> null);
 
@@ -105,7 +106,7 @@ public class TopologyManagerTest
         Topology topology1 = topology(1, shard(range, idList(1, 2, 3), idSet(1, 2)));
         Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
 
         Assertions.assertSame(Topology.EMPTY, service.current());
         service.onTopologyUpdate(topology1, () -> null);
@@ -130,7 +131,7 @@ public class TopologyManagerTest
                                       shard(range(100, 200), idList(1, 2, 3), idSet(3, 4)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(4, 5)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(topology1, () -> null);
         service.onTopologyUpdate(topology2, () -> null);
 
@@ -161,7 +162,7 @@ public class TopologyManagerTest
         Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
         Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(1, 2)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(topology1, () -> null);
         service.onTopologyUpdate(topology2, () -> null);
         service.onTopologyUpdate(topology3, () -> null);
@@ -198,7 +199,7 @@ public class TopologyManagerTest
         Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(2, 3)));
 //        Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(3, 4)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(topology1, () -> null);
 
         // sync epoch 2
@@ -220,7 +221,7 @@ public class TopologyManagerTest
         Topology topology2 = topology(2, shard(range, idList(1, 2, 3), idSet(1, 2)));
         Topology topology3 = topology(3, shard(range, idList(1, 2, 3), idSet(2, 3)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
 
         Assertions.assertSame(Topology.EMPTY, service.current());
         service.onTopologyUpdate(topology1, () -> null);
@@ -250,7 +251,7 @@ public class TopologyManagerTest
                                       shard(range(100, 200), idList(1, 2, 3), idSet(1, 2)),
                                       shard(range(200, 300), idList(4, 5, 6), idSet(5, 6)));
 
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         service.onTopologyUpdate(topology5, () -> null);
         service.onTopologyUpdate(topology6, () -> null);
 
@@ -278,7 +279,7 @@ public class TopologyManagerTest
     void truncateTopologyHistory()
     {
         Range range = range(100, 200);
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         addAndMarkSynced(service, topology(1, shard(range, idList(1, 2, 3), idSet(1, 2))));
         addAndMarkSynced(service, topology(2, shard(range, idList(1, 2, 3), idSet(2, 3))));
         addAndMarkSynced(service, topology(3, shard(range, idList(1, 2, 3), idSet(1, 2))));
@@ -319,7 +320,7 @@ public class TopologyManagerTest
                                         shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));
             topologies.add(topology(epochCounter++,
                                     shard(PrefixedIntHashKey.range(1, 0, 100), idList(1, 2, 3), idSet(1, 2))));;
-            History history = new History(new TopologyManager(SUPPLIER, ID), topologies.iterator()) {
+            History history = new History(testTopologyManager(SUPPLIER, ID), topologies.iterator()) {
 
                 @Override
                 protected void postTopologyUpdate(int id, Topology t)
@@ -365,7 +366,7 @@ public class TopologyManagerTest
     @Test
     void aba()
     {
-        TopologyManager service = new TopologyManager(SUPPLIER, ID);
+        TopologyManager service = testTopologyManager(SUPPLIER, ID);
         List<Node.Id> dc1Nodes = idList(1, 2, 3);
         Set<Node.Id> dc1Fp = idSet(1, 2);
         List<Node.Id> dc2Nodes = idList(4, 5, 6);
@@ -416,7 +417,7 @@ public class TopologyManagerTest
                     return t == null ? endOfData() : t;
                 }
             }, 42);
-            History history = new History(new TopologyManager(SUPPLIER, ID), next) {
+            History history = new History(testTopologyManager(SUPPLIER, ID), next) {
 
                 @Override
                 protected void postTopologyUpdate(int id, Topology t)

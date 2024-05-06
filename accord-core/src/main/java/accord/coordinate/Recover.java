@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import accord.api.Result;
 import accord.coordinate.CoordinationAdapter.Invoke;
@@ -262,7 +261,12 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
                 case Applied:
                 case PreApplied:
                 {
-                    withCommittedDeps(executeAt, stableDeps -> {
+                    withCommittedDeps(executeAt, (stableDeps, failure) -> {
+                        if (failure != null)
+                        {
+                            // TODO (review): This case we don't pass a callback to persist, is that intentional?
+                            return;
+                        }
                         // TODO (future development correctness): when writes/result are partially replicated, need to confirm we have quorum of these
                         persist(adapter, node, tracker.topologies(), route, txnId, txn, executeAt, stableDeps, acceptOrCommit.writes, acceptOrCommit.result, null);
                     });
@@ -272,7 +276,12 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
 
                 case Stable:
                 {
-                    withCommittedDeps(executeAt, stableDeps -> {
+                    withCommittedDeps(executeAt, (stableDeps, failure) -> {
+                        if (failure != null)
+                        {
+                            this.accept(null, failure);
+                            return;
+                        }
                         execute(adapter, node, tracker.topologies(), route, RECOVER, txnId, txn, executeAt, stableDeps, this);
                     });
                     return;
@@ -281,7 +290,12 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
                 case PreCommitted:
                 case Committed:
                 {
-                    withCommittedDeps(executeAt, committedDeps -> {
+                    withCommittedDeps(executeAt, (committedDeps, failure) -> {
+                        if (failure != null)
+                        {
+                            this.accept(null, failure);
+                            return;
+                        }
                         stabilise(adapter, node, tracker.topologies(), route, ballot, txnId, txn, executeAt, committedDeps, this);
                     });
                     return;
@@ -339,20 +353,25 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
         propose(txnId, proposeDeps);
     }
 
-    private void withCommittedDeps(Timestamp executeAt, Consumer<Deps> withDeps)
+    private void withCommittedDeps(Timestamp executeAt, BiConsumer<Deps, Throwable> withDeps)
     {
         LatestDeps.MergedCommitResult merged = LatestDeps.mergeCommit(txnId, executeAt, recoverOks, ok -> ok.deps);
-        node.withEpoch(executeAt.epoch(), () -> {
+        node.withEpoch(executeAt.epoch(), (ignored, withEpochFailure) -> {
+            if (withEpochFailure != null)
+            {
+                withDeps.accept(null, withEpochFailure);
+                return;
+            }
             Seekables<?, ?> missing = txn.keys().subtract(merged.sufficientFor);
             if (missing.isEmpty())
             {
-                withDeps.accept(merged.deps);
+                withDeps.accept(merged.deps, null);
             }
             else
             {
                 CollectDeps.withDeps(node, txnId, missing.toRoute(route.homeKey()), missing, executeAt, (extraDeps, fail) -> {
                     if (fail != null) node.agent().onHandledException(fail);
-                    else withDeps.accept(merged.deps.with(extraDeps));
+                    else withDeps.accept(merged.deps.with(extraDeps), null);
                 });
             }
         });
@@ -371,14 +390,26 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
         // If not accepted then the executeAt is not consistent cross the peers and likely different on every node.  There is also an edge case
         // when ranges are removed from the topology, during this case the executeAt won't know the ranges and the invalidate commit will fail.
         Timestamp invalidateUntil = recoverOks.stream().map(ok -> ok.status.hasBeen(Status.Accepted) ? ok.executeAt : ok.txnId).reduce(txnId, Timestamp::max);
-        node.withEpoch(invalidateUntil.epoch(), () -> Commit.Invalidate.commitInvalidate(node, txnId, route, invalidateUntil));
+        node.withEpoch(invalidateUntil.epoch(), (ignored, withEpochFailure) -> {
+            // TODO (review): There was already nothing here to handle failures in commitInvalidate
+            if (withEpochFailure != null)
+                return;
+            Commit.Invalidate.commitInvalidate(node, txnId, route, invalidateUntil);
+        });
         isDone = true;
         locallyInvalidateAndCallback(node, txnId, invalidateUntil, route, ProgressToken.INVALIDATED, callback);
     }
 
     private void propose(Timestamp executeAt, Deps deps)
     {
-        node.withEpoch(executeAt.epoch(), () -> Invoke.propose(adapter, node, route, ballot, txnId, txn, executeAt, deps, this));
+        node.withEpoch(executeAt.epoch(), (ignored, failure) -> {
+            if (failure != null)
+            {
+                this.accept(null, failure);
+                return;
+            }
+            Invoke.propose(adapter, node, route, ballot, txnId, txn, executeAt, deps, this);
+        });
     }
 
     private void retry()

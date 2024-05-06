@@ -124,8 +124,9 @@ class Bootstrap
 
             if (!node.topology().hasEpoch(globalSyncId.epoch()))
             {
-                node.topology().awaitEpoch(globalSyncId.epoch())
-                    .addCallback(() -> store.execute(empty(), this::start).begin(node.agent())).begin(node.agent());
+                // Ignore timeouts fetching the epoch, always keep trying to bootstrap
+                // TODO (review): begin wasn't being called so this leaked, but what to do with the error?
+                node.withEpoch(globalSyncId.epoch(), (ignored, failure) -> store.execute(empty(), Attempt.this::start).begin((ignored1, ignored2) -> {}));
                 return;
             }
 
@@ -232,8 +233,10 @@ class Bootstrap
                         state.startedAt = logicalClock++;
                 }
                 // TODO (expected): associate callbacks with this CommandStore, to remove synchronization
-                FetchMaxConflict.fetchMaxConflict(node, state.ranges)
-                                .begin((executeAt, failure) -> safeToReadCallback(state, executeAt, failure));
+                FetchMaxConflict.fetchMaxConflict(node, store, state.ranges)
+                                .begin((executeAt, failure) -> {
+                                    store.execute(() -> safeToReadCallback(state, executeAt, failure));
+                                });
             }
             else
             {

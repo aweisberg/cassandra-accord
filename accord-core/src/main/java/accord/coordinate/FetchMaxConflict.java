@@ -21,6 +21,7 @@ package accord.coordinate;
 import java.util.Set;
 
 import accord.coordinate.tracking.QuorumTracker;
+import accord.local.CommandStore;
 import accord.local.Node;
 import accord.messages.Callback;
 import accord.messages.GetMaxConflict;
@@ -45,24 +46,26 @@ public class FetchMaxConflict extends AbstractCoordinatePreAccept<Timestamp, Get
 {
     final QuorumTracker tracker;
     final Seekables<?, ?> keysOrRanges;
+    final CommandStore store;
     Timestamp maxConflict;
     long executionEpoch;
 
-    private FetchMaxConflict(Node node, FullRoute<?> route, Seekables<?, ?> keysOrRanges, long executionEpoch)
+    private FetchMaxConflict(Node node, CommandStore store, FullRoute<?> route, Seekables<?, ?> keysOrRanges, long executionEpoch)
     {
-        this(node, route, keysOrRanges, executionEpoch, node.topology().withUnsyncedEpochs(route, executionEpoch, executionEpoch));
+        this(node, store, route, keysOrRanges, executionEpoch, node.topology().withUnsyncedEpochs(route, executionEpoch, executionEpoch));
     }
 
-    private FetchMaxConflict(Node node, FullRoute<?> route, Seekables<?, ?> keysOrRanges, long executionEpoch, Topologies topologies)
+    private FetchMaxConflict(Node node, CommandStore store, FullRoute<?> route, Seekables<?, ?> keysOrRanges, long executionEpoch, Topologies topologies)
     {
         super(node, route, null, topologies);
+        this.store = store;
         this.keysOrRanges = keysOrRanges;
         this.maxConflict = Timestamp.NONE;
         this.executionEpoch = executionEpoch;
         this.tracker = new QuorumTracker(topologies);
     }
 
-    public static AsyncResult<Timestamp> fetchMaxConflict(Node node, Seekables<?, ?> keysOrRanges)
+    public static AsyncResult<Timestamp> fetchMaxConflict(Node node, CommandStore store, Seekables<?, ?> keysOrRanges)
     {
         long epoch = node.epoch();
         FullRoute<?> route = node.computeRoute(epoch, keysOrRanges);
@@ -70,7 +73,7 @@ public class FetchMaxConflict extends AbstractCoordinatePreAccept<Timestamp, Get
         TopologyMismatch mismatch = TopologyMismatch.checkForMismatch(node.topology().globalForEpoch(epoch), null, route.homeKey(), keysOrRanges);
         if (mismatch != null)
             return AsyncResults.failure(mismatch);
-        FetchMaxConflict coordinate = new FetchMaxConflict(node, route, keysOrRanges, epoch);
+        FetchMaxConflict coordinate = new FetchMaxConflict(node, store, route, keysOrRanges, epoch);
         coordinate.start();
         return coordinate;
     }

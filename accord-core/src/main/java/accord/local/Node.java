@@ -181,7 +181,8 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         this.localRequestHandler = localRequestHandler;
         this.configService = configService;
         this.coordinationAdapters = coordinationAdapters;
-        this.topology = new TopologyManager(topologySorter, id);
+        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, nowTimeUnit);
+        topology.scheduleTopologyUpdateWatchdog();
         this.nowSupplier = nowSupplier;
         this.nowTimeUnit = nowTimeUnit;
         this.now = new AtomicReference<>(Timestamp.fromValues(topology.epoch(), nowSupplier.getAsLong(), id));
@@ -285,31 +286,24 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         topology.onEpochRedundant(ranges, epoch);
     }
 
-    public AsyncChain<?> awaitEpoch(long epoch)
-    {
-        if (topology.hasEpoch(epoch))
-            return AsyncResults.SUCCESS_VOID;
-        configService.fetchTopologyForEpoch(epoch);
-        return topology.awaitEpoch(epoch);
-    }
-
-    public AsyncChain<?> awaitEpoch(@Nullable EpochSupplier epochSupplier)
+    public void withEpoch(EpochSupplier epochSupplier, BiConsumer<Void, Throwable> callback)
     {
         if (epochSupplier == null)
-            return AsyncResults.SUCCESS_VOID;
-        return awaitEpoch(epochSupplier.epoch());
+            callback.accept(null, null);
+        else
+            withEpoch(epochSupplier.epoch(), callback);
     }
 
-    public void withEpoch(long epoch, Runnable runnable)
+    public void withEpoch(long epoch, BiConsumer<Void, Throwable> callback)
     {
         if (topology.hasEpoch(epoch))
         {
-            runnable.run();
+            callback.accept(null, null);
         }
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            topology.awaitEpoch(epoch).addCallback(runnable).begin(agent);
+            topology.awaitEpoch(epoch).addCallback(callback).begin((ignored1, ignored2) -> {});
         }
     }
 
@@ -327,14 +321,6 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         }
     }
 
-    @Inline
-    public <T> AsyncChain<T> withEpoch(@Nullable EpochSupplier epochSupplier, Supplier<? extends AsyncChain<T>> supplier)
-    {
-        if (epochSupplier == null)
-            return supplier.get();
-        return withEpoch(epochSupplier.epoch(), supplier);
-    }
-
     public TopologyManager topology()
     {
         return topology;
@@ -343,6 +329,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     public void shutdown()
     {
         commandStores.shutdown();
+        topology.shutdown();
     }
 
     public Timestamp uniqueNow()
@@ -738,7 +725,10 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         if (waitForEpoch > topology.epoch())
         {
             configService.fetchTopologyForEpoch(waitForEpoch);
-            topology().awaitEpoch(waitForEpoch).addCallback(() -> receive(request, from, replyContext));
+            topology().awaitEpoch(waitForEpoch).addCallback((ignored, failure) -> {
+                if (failure != null)
+                    receive(request, from, replyContext);
+            });
             return;
         }
 

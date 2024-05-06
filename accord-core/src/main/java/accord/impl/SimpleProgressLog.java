@@ -39,7 +39,6 @@ import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
-
 import accord.local.SaveStatus.LocalExecution;
 import accord.local.Status.Known;
 import accord.primitives.EpochSupplier;
@@ -58,8 +57,8 @@ import accord.utils.async.AsyncResult;
 
 import static accord.api.ProgressLog.ProgressShard.Unsure;
 import static accord.coordinate.InformHomeOfTxn.inform;
-import static accord.impl.SimpleProgressLog.CoordinateStatus.ReadyToExecute;
 import static accord.impl.SimpleProgressLog.CoordinateStatus.NotStable;
+import static accord.impl.SimpleProgressLog.CoordinateStatus.ReadyToExecute;
 import static accord.impl.SimpleProgressLog.Progress.Done;
 import static accord.impl.SimpleProgressLog.Progress.Expected;
 import static accord.impl.SimpleProgressLog.Progress.Investigating;
@@ -253,7 +252,20 @@ public class SimpleProgressLog implements ProgressLog.Factory
                             Invariants.checkState(!command.durability().isDurableOrInvalidated(), "Command is durable or invalidated, but we have not cleared the ProgressLog");
 
                             Route<?> route = Invariants.nonNull(command.route()).withHomeKey();
-                            node.withEpoch(txnId.epoch(), () -> {
+                            node.withEpoch(txnId.epoch(), (ignored, withEpochFailure) -> {
+                                // TODO (review): It looks like there is some error handling that should be done here
+                                // At least set progress to expected as would happen if recover had a failure?
+                                if (withEpochFailure != null)
+                                {
+                                    commandStore.execute(contextFor(txnId), safeStore0 -> {
+                                        if (status.isAtMostReadyToExecute() && progress() == Investigating)
+                                        {
+                                            setProgress(Expected);
+                                        }
+                                    }).begin(node.agent());
+                                    return;
+                                }
+
                                 AsyncResult<? extends Outcome> recover = node.maybeRecover(txnId, route, token);
                                 recover.addCallback((success, fail) -> {
                                     // TODO (expected): callback should be on safeStore, and should provide safeStore as a parameter
@@ -344,7 +356,12 @@ public class SimpleProgressLog implements ProgressLog.Factory
                         }).begin(commandStore.agent());
                     };
 
-                    node.withEpoch(blockedUntil.fetchEpoch(txnId, executeAt), () -> {
+                    node.withEpoch(blockedUntil.fetchEpoch(txnId, executeAt), (ignored, withEpochFailure) -> {
+                        if (withEpochFailure != null)
+                        {
+                            callback.accept(null, withEpochFailure);
+                            return;
+                        }
                         FetchData.fetch(blockedUntil.requires, node, txnId, fetchKeys, forLocalEpoch, executeAt, callback);
                     });
                 }
