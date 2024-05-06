@@ -23,14 +23,18 @@ import java.util.BitSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.ConfigurationService.EpochReady;
 import accord.api.RoutingKey;
+import accord.api.Scheduler;
 import accord.api.TopologySorter;
+import accord.coordinate.Timeout;
 import accord.coordinate.TopologyMismatch;
 import accord.coordinate.tracking.QuorumTracker;
 import accord.local.CommandStore;
@@ -44,13 +48,14 @@ import accord.utils.Invariants;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
-
 import javax.annotation.Nullable;
+import javax.annotation.concurrent.GuardedBy;
 
 import static accord.coordinate.tracking.RequestStatus.Success;
 import static accord.primitives.AbstractRanges.UnionMode.MERGE_ADJACENT;
 import static accord.primitives.Routables.Slice.Minimal;
 import static accord.utils.Invariants.checkArgument;
+import static accord.utils.Invariants.checkState;
 import static accord.utils.Invariants.illegalState;
 import static accord.utils.Invariants.nonNull;
 
@@ -70,6 +75,11 @@ import static accord.utils.Invariants.nonNull;
 public class TopologyManager
 {
     private static final AsyncResult<Void> SUCCESS = AsyncResults.success(null);
+
+    // How long before we start notifying waiters on an epoch of timeout,
+    private static final long EPOCH_INITIAL_TIMEOUT_MILLIS = 10_000;
+    // How often we check for timeout, and once an epoch has timed out, how often we timeout new waiters
+    private static final long WATCHDOG_INTERVAL_MILLIS = 2_000;
 
     static class EpochState
     {
@@ -106,7 +116,7 @@ public class TopologyManager
             newPrevSyncComplete = newPrevSyncComplete.union(MERGE_ADJACENT, addedRanges).subtract(removedRanges);
             if (prevSyncComplete.containsAll(newPrevSyncComplete))
                 return false;
-            Invariants.checkState(newPrevSyncComplete.containsAll(prevSyncComplete), "Expected %s to contain all ranges in %s; but did not", newPrevSyncComplete, prevSyncComplete);
+            checkState(newPrevSyncComplete.containsAll(prevSyncComplete), "Expected %s to contain all ranges in %s; but did not", newPrevSyncComplete, prevSyncComplete);
             prevSyncComplete = newPrevSyncComplete;
             syncComplete = curSyncComplete.slice(newPrevSyncComplete, Minimal).union(MERGE_ADJACENT, addedRanges);
             return true;
@@ -215,13 +225,13 @@ public class TopologyManager
         // list of promises to be completed as newer epochs become active. This is to support processes that
         // are waiting on future epochs to begin (ie: txn requests from futures epochs). Index 0 is for
         // currentEpoch + 1
-        private final List<AsyncResult.Settable<Void>> futureEpochFutures;
+        private final List<FutureEpoch> futureEpochs;
 
-        private Epochs(EpochState[] epochs, List<Notifications> pending, List<AsyncResult.Settable<Void>> futureEpochFutures)
+        private Epochs(EpochState[] epochs, List<Notifications> pending, List<FutureEpoch> futureEpochs)
         {
             this.currentEpoch = epochs.length > 0 ? epochs[0].epoch() : 0;
             this.pending = pending;
-            this.futureEpochFutures = futureEpochFutures;
+            this.futureEpochs = futureEpochs;
             for (int i=1; i<epochs.length; i++)
                 checkArgument(epochs[i].epoch() == epochs[i-1].epoch() - 1);
             this.epochs = epochs;
@@ -232,16 +242,18 @@ public class TopologyManager
             this(epochs, new ArrayList<>(), new ArrayList<>());
         }
 
-        public AsyncResult<Void> awaitEpoch(long epoch)
+        public AsyncResult<Void> awaitEpoch(long epoch, ToLongFunction<TimeUnit> nowTimeUnit)
         {
             if (epoch <= currentEpoch)
                 return SUCCESS;
 
+            long now = nowTimeUnit.applyAsLong(TimeUnit.MILLISECONDS);
+            long deadline = now + EPOCH_INITIAL_TIMEOUT_MILLIS;
             int diff = (int) (epoch - currentEpoch);
-            while (futureEpochFutures.size() < diff)
-                futureEpochFutures.add(AsyncResults.settable());
+            while (futureEpochs.size() < diff)
+                futureEpochs.add(new FutureEpoch(AsyncResults.settable(), deadline));
 
-            return futureEpochFutures.get(diff - 1);
+            return futureEpochs.get(diff - 1).future;
         }
 
         public long nextEpoch()
@@ -365,15 +377,82 @@ public class TopologyManager
         }
     }
 
+    private static class FutureEpoch
+    {
+        private final long deadlineMillis;
+        private volatile AsyncResult.Settable<Void> future;
+
+        public FutureEpoch(AsyncResult.Settable<Void> future, long deadlineMillis)
+        {
+            nonNull(future);
+            this.future = future;
+            this.deadlineMillis = deadlineMillis;
+        }
+
+        /*
+         * Notify any listeners that are waiting for the epoch that is has been a long time since
+         * we started waiting for the epoch. We may still eventually get the epoch so also create
+         * a new future so subsequent operations may have a chance at seeing the epoch if ever appears.
+         *
+         * Subsequent waiters may get a timeout notification far sooner (WATCHDOG_INTERVAL_MILLISS)
+         * instead of EPOCH_INITIAL_TIMEOUT_MILLIS
+         */
+        @GuardedBy("TopologyManager.this")
+        public void timeOutCurrentListeners()
+        {
+            checkState(future != null);
+            AsyncResult.Settable<Void> oldFuture = future;
+            checkState(oldFuture != null);
+            future = AsyncResults.settable();
+            oldFuture.tryFailure(new Timeout(null, null));
+        }
+    }
+
     private final TopologySorter.Supplier sorter;
     private final Id node;
+    private final Scheduler scheduler;
+    private final ToLongFunction<TimeUnit> nowTimeUnit;
     private volatile Epochs epochs;
+    private Scheduler.Scheduled topologyUpdateWatchdog;
 
-    public TopologyManager(TopologySorter.Supplier sorter, Id node)
+    public TopologyManager(TopologySorter.Supplier sorter, Id node, Scheduler scheduler, ToLongFunction<TimeUnit> nowTimeUnit)
     {
         this.sorter = sorter;
         this.node = node;
+        this.scheduler = scheduler;
+        this.nowTimeUnit = nowTimeUnit;
         this.epochs = Epochs.EMPTY;
+    }
+
+    public void shutdown()
+    {
+        topologyUpdateWatchdog.cancel();
+    }
+
+    public void scheduleTopologyUpdateWatchdog()
+    {
+        topologyUpdateWatchdog = scheduler.recurring(() -> {
+            synchronized (TopologyManager.this)
+            {
+                Epochs current = epochs;
+                if (current.futureEpochs.isEmpty())
+                    return;
+
+                long now = nowTimeUnit.applyAsLong(TimeUnit.MILLISECONDS);
+                if (now > current.futureEpochs.get(0).deadlineMillis)
+                {
+                    List<FutureEpoch> futureEpochs = null;
+                    for (int i = 0; i < current.futureEpochs.size(); i++)
+                    {
+                        FutureEpoch futureEpoch = current.futureEpochs.get(i);
+                        if (now <= futureEpoch.deadlineMillis)
+                            break;
+                        else
+                            futureEpoch.timeOutCurrentListeners();
+                    }
+                }
+            }
+        }, WATCHDOG_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
     }
 
     public synchronized EpochReady onTopologyUpdate(Topology topology, Supplier<EpochReady> bootstrap)
@@ -400,11 +479,12 @@ public class TopologyManager
         nextEpochs[0].recordClosed(notifications.closed);
         nextEpochs[0].recordComplete(notifications.complete);
 
-        List<AsyncResult.Settable<Void>> futureEpochFutures = new ArrayList<>(current.futureEpochFutures);
-        AsyncResult.Settable<Void> toComplete = !futureEpochFutures.isEmpty() ? futureEpochFutures.remove(0) : null;
-        epochs = new Epochs(nextEpochs, pending, futureEpochFutures);
+        List<FutureEpoch> futureEpochs = new ArrayList<>(current.futureEpochs);
+        FutureEpoch toComplete = !futureEpochs.isEmpty() ? futureEpochs.remove(0) : null;
+        epochs = new Epochs(nextEpochs, pending, futureEpochs);
+        epochs = new Epochs(nextEpochs, pending, futureEpochs);
         if (toComplete != null)
-            toComplete.trySuccess(null);
+            toComplete.future.trySuccess(null);
 
         return nextEpochs[0].ready = bootstrap.get();
     }
@@ -414,7 +494,7 @@ public class TopologyManager
         AsyncResult<Void> result;
         synchronized (this)
         {
-            result = epochs.awaitEpoch(epoch);
+            result = epochs.awaitEpoch(epoch, nowTimeUnit);
         }
         CommandStore current = CommandStore.maybeCurrent();
         return current == null || result.isDone() ? result : result.withExecutor(current);
@@ -448,11 +528,11 @@ public class TopologyManager
             return;
 
         int newLen = current.epochs.length - (int) (epoch - current.minEpoch());
-        Invariants.checkState(current.epochs[newLen - 1].syncComplete(), "Epoch %d's sync is not complete", current.epochs[newLen - 1].epoch());
+        checkState(current.epochs[newLen - 1].syncComplete(), "Epoch %d's sync is not complete", current.epochs[newLen - 1].epoch());
 
         EpochState[] nextEpochs = new EpochState[newLen];
         System.arraycopy(current.epochs, 0, nextEpochs, 0, newLen);
-        epochs = new Epochs(nextEpochs, current.pending, current.futureEpochFutures);
+        epochs = new Epochs(nextEpochs, current.pending, current.futureEpochs);
     }
 
     public synchronized void onEpochClosed(Ranges ranges, long epoch)
@@ -527,7 +607,7 @@ public class TopologyManager
             throw tm;
 
         if (maxEpoch == Long.MAX_VALUE) maxEpoch = snapshot.currentEpoch;
-        else Invariants.checkState(snapshot.currentEpoch >= maxEpoch, "current epoch %d < max %d", snapshot.currentEpoch, maxEpoch);
+        else checkState(snapshot.currentEpoch >= maxEpoch, "current epoch %d < max %d", snapshot.currentEpoch, maxEpoch);
 
         EpochState maxEpochState = nonNull(snapshot.get(maxEpoch));
         if (minEpoch == maxEpoch && isSufficientFor.apply(maxEpochState).containsAll(select))
@@ -591,7 +671,7 @@ public class TopologyManager
         Epochs snapshot = epochs;
 
         EpochState maxState = snapshot.get(maxEpoch);
-        Invariants.checkState(maxState != null, "Unable to find epoch %d; known epochs are %d -> %d", maxEpoch, snapshot.minEpoch(), snapshot.currentEpoch);
+        checkState(maxState != null, "Unable to find epoch %d; known epochs are %d -> %d", maxEpoch, snapshot.minEpoch(), snapshot.currentEpoch);
         TopologyMismatch tm = TopologyMismatch.checkForMismatch(maxState.global(), select);
         if (tm != null)
             throw tm;
@@ -607,7 +687,7 @@ public class TopologyManager
             topologies.add(epochState.global.forSelection(select));
             select = select.subtract(epochState.addedRanges);
         }
-        Invariants.checkState(!topologies.isEmpty(), "Unable to find an epoch that contained %s", select);
+        checkState(!topologies.isEmpty(), "Unable to find an epoch that contained %s", select);
 
         return topologies.build(sorter);
     }

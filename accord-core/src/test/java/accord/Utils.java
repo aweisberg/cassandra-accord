@@ -30,6 +30,7 @@ import com.google.common.collect.Sets;
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Scheduler;
+import accord.api.TopologySorter;
 import accord.config.LocalConfig;
 import accord.config.MutableLocalConfig;
 import accord.coordinate.CoordinationAdapter;
@@ -45,6 +46,7 @@ import accord.impl.mock.MockCluster;
 import accord.impl.mock.MockConfigurationService;
 import accord.impl.mock.MockStore;
 import accord.local.Node;
+import accord.local.Node.Id;
 import accord.local.NodeTimeService;
 import accord.local.ShardDistributor;
 import accord.messages.LocalRequest;
@@ -55,6 +57,7 @@ import accord.primitives.Txn;
 import accord.topology.Shard;
 import accord.topology.Topologies;
 import accord.topology.Topology;
+import accord.topology.TopologyManager;
 import accord.utils.DefaultRandom;
 import accord.utils.EpochFunction;
 import accord.utils.Invariants;
@@ -193,5 +196,10 @@ public class Utils
                   .atMost(timeoutInSeconds, TimeUnit.SECONDS)
                   .ignoreExceptions()
                   .untilAsserted(runnable);
+    }
+
+    public static TopologyManager testTopologyManager(TopologySorter.Supplier sorter, Id node)
+    {
+        return new TopologyManager(sorter, node, Scheduler.NEVER_RUN_SCHEDULED, NodeTimeService.unixWrapper(TimeUnit.MILLISECONDS, () -> 0));
     }
 }
