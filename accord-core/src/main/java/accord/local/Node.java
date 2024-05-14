@@ -18,27 +18,6 @@
 
 package accord.local;
 
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableSet;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.LongSupplier;
-import java.util.function.Supplier;
-import java.util.function.ToLongFunction;
-
-import com.google.common.annotations.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import accord.api.Agent;
 import accord.api.ConfigurationService;
 import accord.api.ConfigurationService.EpochReady;
@@ -89,9 +68,29 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncExecutor;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
+import com.google.common.annotations.VisibleForTesting;
+import net.nicoulaj.compilecommand.annotations.Inline;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import net.nicoulaj.compilecommand.annotations.Inline;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 
 import static accord.utils.Invariants.illegalState;
 import static java.lang.String.format;
@@ -179,7 +178,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         this.localRequestHandler = localRequestHandler;
         this.configService = configService;
         this.coordinationAdapters = coordinationAdapters;
-        this.topology = new TopologyManager(topologySorter, id, scheduler, nowTimeUnit);
+        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, nowTimeUnit);
         topology.scheduleTopologyUpdateWatchdog();
         this.nowSupplier = nowSupplier;
         this.nowTimeUnit = nowTimeUnit;
@@ -288,16 +287,16 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         return awaitEpoch(epochSupplier.epoch());
     }
 
-    public void withEpoch(long epoch, Runnable runnable)
+    public void withEpoch(long epoch, BiConsumer<Void, Throwable> callback)
     {
         if (topology.hasEpoch(epoch))
         {
-            runnable.run();
+            callback.accept(null, null);
         }
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            topology.awaitEpoch(epoch).addCallback(runnable).begin(agent);
+            topology.awaitEpoch(epoch).addCallback(callback).begin(agent);
         }
     }
 
@@ -315,13 +314,13 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         }
     }
 
-    @Inline
-    public <T> AsyncChain<T> withEpoch(@Nullable EpochSupplier epochSupplier, Supplier<? extends AsyncChain<T>> supplier)
-    {
-        if (epochSupplier == null)
-            return supplier.get();
-        return withEpoch(epochSupplier.epoch(), supplier);
-    }
+//    @Inline
+//    public <T> AsyncChain<T> withEpoch(@Nullable EpochSupplier epochSupplier, Supplier<? extends AsyncChain<T>> supplier)
+//    {
+//        if (epochSupplier == null)
+//            return supplier.get();
+//        return withEpoch(epochSupplier.epoch(), supplier);
+//    }
 
     public TopologyManager topology()
     {

@@ -23,7 +23,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
-import javax.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.coordinate.tracking.QuorumTracker;
 import accord.local.Node;
@@ -35,6 +36,7 @@ import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncResults.SettableResult;
+import javax.annotation.Nullable;
 
 import static accord.coordinate.tracking.RequestStatus.Failed;
 import static accord.coordinate.tracking.RequestStatus.Success;
@@ -45,6 +47,8 @@ import static accord.coordinate.tracking.RequestStatus.Success;
  */
 abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> implements Callback<R>, BiConsumer<T, Throwable>
 {
+    private static final Logger logger = LoggerFactory.getLogger(AbstractCoordinatePreAccept.class);
+
     class ExtraEpochs implements Callback<R>
     {
         final QuorumTracker tracker;
@@ -177,6 +181,7 @@ abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> imple
         if (extraEpochs != null)
             extraEpochs.extraRoundIsDone = true;
 
+        logger.error("Failure in AbstractCoordinatePreAccept", failure);
         if (failure instanceof CoordinationFailed)
         {
             ((CoordinationFailed) failure).set(txnId, route.homeKey());
@@ -211,7 +216,12 @@ abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> imple
     {
         // TODO (desired, efficiency): check if we have already have a valid quorum for the future epoch
         //  (noting that nodes may have adopted new ranges, in which case they should be discounted, and quorums may have changed shape)
-        node.withEpoch(latestEpoch, () -> {
+        node.withEpoch(latestEpoch, (ignored, withEpochFailure) -> {
+            if (withEpochFailure != null)
+            {
+                onFailure(withEpochFailure);
+                return;
+            }
             TopologyMismatch mismatch = TopologyMismatch.checkForMismatch(node.topology().globalForEpoch(latestEpoch), txnId, route.homeKey(), keysOrRanges());
             if (mismatch != null)
             {

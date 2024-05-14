@@ -30,6 +30,7 @@ import java.util.function.ToLongFunction;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import accord.api.Agent;
 import accord.api.ConfigurationService.EpochReady;
 import accord.api.RoutingKey;
 import accord.api.Scheduler;
@@ -242,7 +243,7 @@ public class TopologyManager
             this(epochs, new ArrayList<>(), new ArrayList<>());
         }
 
-        public AsyncResult<Void> awaitEpoch(long epoch, ToLongFunction<TimeUnit> nowTimeUnit)
+        public AsyncResult<Void> awaitEpoch(long epoch, Agent agent, ToLongFunction<TimeUnit> nowTimeUnit)
         {
             if (epoch <= currentEpoch)
                 return SUCCESS;
@@ -251,7 +252,15 @@ public class TopologyManager
             long deadline = now + EPOCH_INITIAL_TIMEOUT_MILLIS;
             int diff = (int) (epoch - currentEpoch);
             while (futureEpochs.size() < diff)
-                futureEpochs.add(new FutureEpoch(AsyncResults.settable(), deadline));
+            {
+                FutureEpoch futureEpoch = new FutureEpoch(AsyncResults.settable(), deadline);
+                futureEpochs.add(futureEpoch);
+                // Always make a topology timeout visible
+                futureEpoch.future.addCallback((ignored, failure) -> {
+                    if (failure != null)
+                        agent.onUncaughtException(failure);
+                });
+            }
 
             return futureEpochs.get(diff - 1).future;
         }
@@ -398,26 +407,33 @@ public class TopologyManager
          * instead of EPOCH_INITIAL_TIMEOUT_MILLIS
          */
         @GuardedBy("TopologyManager.this")
-        public void timeOutCurrentListeners()
+        public void timeOutCurrentListeners(Agent agent)
         {
             checkState(future != null);
             AsyncResult.Settable<Void> oldFuture = future;
             checkState(oldFuture != null);
             future = AsyncResults.settable();
+            // Always make a topology timeout visible
+            future.addCallback((ignored, failure) -> {
+                if (failure != null)
+                    agent.onUncaughtException(failure);
+            });
             oldFuture.tryFailure(new Timeout(null, null));
         }
     }
 
     private final TopologySorter.Supplier sorter;
+    private final Agent agent;
     private final Id node;
     private final Scheduler scheduler;
     private final ToLongFunction<TimeUnit> nowTimeUnit;
     private volatile Epochs epochs;
     private Scheduler.Scheduled topologyUpdateWatchdog;
 
-    public TopologyManager(TopologySorter.Supplier sorter, Id node, Scheduler scheduler, ToLongFunction<TimeUnit> nowTimeUnit)
+    public TopologyManager(TopologySorter.Supplier sorter, Agent agent, Id node, Scheduler scheduler, ToLongFunction<TimeUnit> nowTimeUnit)
     {
         this.sorter = sorter;
+        this.agent = agent;
         this.node = node;
         this.scheduler = scheduler;
         this.nowTimeUnit = nowTimeUnit;
@@ -441,14 +457,13 @@ public class TopologyManager
                 long now = nowTimeUnit.applyAsLong(TimeUnit.MILLISECONDS);
                 if (now > current.futureEpochs.get(0).deadlineMillis)
                 {
-                    List<FutureEpoch> futureEpochs = null;
                     for (int i = 0; i < current.futureEpochs.size(); i++)
                     {
                         FutureEpoch futureEpoch = current.futureEpochs.get(i);
                         if (now <= futureEpoch.deadlineMillis)
                             break;
                         else
-                            futureEpoch.timeOutCurrentListeners();
+                            futureEpoch.timeOutCurrentListeners(agent);
                     }
                 }
             }
@@ -494,7 +509,7 @@ public class TopologyManager
         AsyncResult<Void> result;
         synchronized (this)
         {
-            result = epochs.awaitEpoch(epoch, nowTimeUnit);
+            result = epochs.awaitEpoch(epoch, agent, nowTimeUnit);
         }
         CommandStore current = CommandStore.maybeCurrent();
         return current == null || result.isDone() ? result : result.withExecutor(current);

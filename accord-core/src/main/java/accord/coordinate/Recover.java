@@ -342,7 +342,9 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
     private void withCommittedDeps(Timestamp executeAt, Consumer<Deps> withDeps)
     {
         LatestDeps.MergedCommitResult merged = LatestDeps.mergeCommit(txnId, executeAt, recoverOks, ok -> ok.deps);
-        node.withEpoch(executeAt.epoch(), () -> {
+        node.withEpoch(executeAt.epoch(), (ignored, withEpochFailure) -> {
+            if (withEpochFailure != null)
+                throw new RuntimeException(withEpochFailure);
             Seekables<?, ?> missing = txn.keys().subtract(merged.sufficientFor);
             if (missing.isEmpty())
             {
@@ -371,14 +373,28 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
         // If not accepted then the executeAt is not consistent cross the peers and likely different on every node.  There is also an edge case
         // when ranges are removed from the topology, during this case the executeAt won't know the ranges and the invalidate commit will fail.
         Timestamp invalidateUntil = recoverOks.stream().map(ok -> ok.status.hasBeen(Status.Accepted) ? ok.executeAt : ok.txnId).reduce(txnId, Timestamp::max);
-        node.withEpoch(invalidateUntil.epoch(), () -> Commit.Invalidate.commitInvalidate(node, txnId, route, invalidateUntil));
+        node.withEpoch(invalidateUntil.epoch(), (ignored, failure) -> {
+            if (failure != null)
+            {
+                callback.accept(null, failure);
+                throw new RuntimeException(failure);
+            }
+            Commit.Invalidate.commitInvalidate(node, txnId, route, invalidateUntil);
+        });
         isDone = true;
         locallyInvalidateAndCallback(node, txnId, invalidateUntil, route, ProgressToken.INVALIDATED, callback);
     }
 
     private void propose(Timestamp executeAt, Deps deps)
     {
-        node.withEpoch(executeAt.epoch(), () -> Invoke.propose(adapter, node, route, ballot, txnId, txn, executeAt, deps, this));
+        node.withEpoch(executeAt.epoch(), (ignored, failure) -> {
+            if (failure != null)
+            {
+                this.accept(null, failure);
+                return;
+            }
+            Invoke.propose(adapter, node, route, ballot, txnId, txn, executeAt, deps, this);
+        });
     }
 
     private void retry()

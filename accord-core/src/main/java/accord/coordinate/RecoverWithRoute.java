@@ -18,8 +18,6 @@
 
 package accord.coordinate;
 
-import java.util.function.BiConsumer;
-
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.local.Status;
@@ -40,7 +38,9 @@ import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
+
 import javax.annotation.Nullable;
+import java.util.function.BiConsumer;
 
 import static accord.coordinate.CoordinationAdapter.Factory.Step.InitiateRecovery;
 import static accord.coordinate.CoordinationAdapter.Invoke.persist;
@@ -211,9 +211,15 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
                 if (known.executeAt.isDecidedAndKnownToExecute() && known.deps.hasDecidedDeps() && known.outcome == Apply)
                 {
                     Deps deps = full.stableDeps.reconstitute(route());
-                    node.withEpoch(full.executeAt.epoch(), () -> {
+                    node.withEpoch(full.executeAt.epoch(), (ignored, withEpochFailure) -> {
+                        if (withEpochFailure != null)
+                        {
+                            callback.accept(null, withEpochFailure);
+                            throw new RuntimeException(withEpochFailure);
+                        }
                         persist(node.coordinationAdapter(txnId, InitiateRecovery), node, topologies, route(), txnId, txn, full.executeAt, deps, full.writes, full.result, null);
                     });
+                    // TODO (review): We say it was applied regardless of what happens elsewhere? Could/should this move into the withEpoch?
                     callback.accept(APPLIED, null);
                 }
                 else

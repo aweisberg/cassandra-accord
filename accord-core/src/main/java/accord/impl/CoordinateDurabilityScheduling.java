@@ -48,6 +48,7 @@ import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncResult;
 
 import static accord.primitives.Txn.Kind.ExclusiveSyncPoint;
+import static com.google.common.base.Throwables.getStackTraceAsString;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 
 /**
@@ -214,10 +215,15 @@ public class CoordinateDurabilityScheduling
     private void startShardSync(Ranges ranges)
     {
         TxnId at = node.nextTxnId(ExclusiveSyncPoint, Domain.Range);
-        node.scheduler().once(() -> node.withEpoch(at.epoch(), () -> {
+        node.scheduler().once(() -> node.withEpoch(at.epoch(), (ignored, withEpochFailure) -> {
+                           if (withEpochFailure != null)
+                           {
+                               logger.trace("Exception waiting for epoch before coordinating exclusive sync point for local shard durability, epoch {}: {}", at.epoch(), getStackTraceAsString(withEpochFailure));
+                               return;
+                           }
                            CoordinateSyncPoint.exclusive(node, at, ranges)
                                .addCallback((success, fail) -> {
-                                   if (fail != null) logger.trace("Exception coordinating exclusive sync point for local shard durability of {}", ranges, fail);
+                                   if (fail != null) logger.trace("Exception coordinating exclusive sync point for local shard durability of {}: {}", ranges, getStackTraceAsString(fail));
                                    else coordinateShardDurableAfterExclusiveSyncPoint(node, success);
                                });
         }), txnIdLagMicros, MICROSECONDS);
