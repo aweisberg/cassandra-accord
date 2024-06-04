@@ -22,11 +22,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -37,6 +41,8 @@ import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import org.junit.jupiter.api.Assertions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,16 +62,21 @@ import accord.coordinate.Invalidated;
 import accord.coordinate.Preempted;
 import accord.coordinate.Timeout;
 import accord.impl.CoordinateDurabilityScheduling;
+import accord.impl.InMemoryCommandStore.GlobalCommand;
 import accord.impl.MessageListener;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.SimpleProgressLog;
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.TopologyFactory;
+import accord.impl.basic.DelayedCommandStores.DelayedCommandStore;
 import accord.impl.list.ListStore;
 import accord.local.AgentExecutor;
-import accord.local.Node.Id;
+import accord.local.Command;
+import accord.local.CommandStores.ShardHolder;
 import accord.local.Node;
+import accord.local.Node.Id;
 import accord.local.NodeTimeService;
+import accord.local.SaveStatus;
 import accord.local.ShardDistributor;
 import accord.messages.Message;
 import accord.messages.MessageType;
@@ -73,14 +84,17 @@ import accord.messages.Reply;
 import accord.messages.Request;
 import accord.messages.SafeCallback;
 import accord.primitives.Keys;
+import accord.primitives.PartialDeps;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
+import accord.primitives.TxnId;
 import accord.topology.Topology;
 import accord.topology.TopologyRandomizer;
 import accord.utils.Gens;
 import accord.utils.Invariants;
+import accord.utils.Pair;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
@@ -101,6 +115,7 @@ import static java.util.stream.Collectors.toList;
 
 public class Cluster implements Scheduler
 {
+    public static final Logger logger = LoggerFactory.getLogger("Cluster");
     public static final Logger trace = LoggerFactory.getLogger("accord.impl.basic.Trace");
 
     public static class Stats
@@ -376,7 +391,15 @@ public class Cluster implements Scheduler
             while ((next = in.get()) != null)
                 sinks.add(next, 0, TimeUnit.NANOSECONDS);
 
-            while (sinks.processPending());
+            long count = 0;
+            while (true)
+            {
+                if (!sinks.processPending())
+                    break;
+                count++;
+                if (count % 10_000 == 0)
+                    sinks.cycleCheck(count);
+            }
 
             chaos.cancel();
             reconfigure.cancel();
@@ -643,6 +666,106 @@ public class Cluster implements Scheduler
                     return randomOverrides(bidirectional, linkOverride, count, nodesList, random, defaultLinks);
             }
         };
+    }
+
+    private void cycleCheck(long count)
+    {
+        Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore = new ConcurrentHashMap<>();
+        Map<TxnId, Set<TxnId>>  txnsToDependencies = new ConcurrentHashMap<>();
+        for (Id id : sinks.keySet())
+        {
+            Node n = lookup.apply(id);
+            for (ShardHolder holder : n.commandStores().current.shards)
+            {
+                DelayedCommandStore commandStore = (DelayedCommandStore)holder.store;
+                for (Map.Entry<TxnId, GlobalCommand> e : commandStore.commands.entrySet())
+                {
+                    Command command = e.getValue().value();
+                    if (command == null)
+                        continue;
+                    if (!(command.saveStatus().ordinal() >= SaveStatus.Applying.ordinal()))
+                        continue;
+                    PartialDeps deps = command.partialDeps() != null ? command.partialDeps() : PartialDeps.NONE;
+                    ImmutableSet.Builder<TxnId> builder = ImmutableSet.builder();
+                    for (int i = 0; i < deps.txnIdCount(); i++)
+                        builder.add(deps.txnId(i));
+                    Set<TxnId> depIds = builder.build();
+                    Map<Pair<Id, Integer>, Command> nodeTxns = txnsByCStore.computeIfAbsent(e.getKey(), ignored -> new ConcurrentHashMap<>());
+                    nodeTxns.put(Pair.create(id, commandStore.id()), command);
+                    Set<TxnId> dependencies = txnsToDependencies.computeIfAbsent(e.getKey(), ignored -> Sets.newConcurrentHashSet());
+                    dependencies.addAll(depIds);
+                }
+            }
+        }
+
+//        logger.info("Starting cycle detection with txnCount {}", txnsToDependencies.size());
+
+        Set<TxnId> seen = new HashSet<>();
+        Stack<Iterator<TxnId>> toProcess = new Stack<>();
+        Stack<TxnId> path = new Stack<>();
+        for (TxnId txnId : txnsToDependencies.keySet())
+        {
+            if (seen.contains(txnId))
+                continue;
+            else
+                seen.add(txnId);
+
+            path.push(txnId);
+            toProcess.push(txnsToDependencies.get(txnId).iterator());
+
+            processDependencies(count, toProcess, seen, path, txnsByCStore, txnsToDependencies);
+        }
+    }
+
+    private static void processDependencies(long count, Stack<Iterator<TxnId>> toProcess, Set<TxnId> seen, Stack<TxnId> path, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, Map<TxnId, Set<TxnId>> txnsToDependencies)
+    {
+        while (!toProcess.isEmpty())
+        {
+            Iterator<TxnId> iterator = toProcess.peek();
+            if (iterator.hasNext())
+            {
+                TxnId txnId = iterator.next();
+                if (seen.contains(txnId) )
+                {
+                    List<TxnId> cycleIds = new ArrayList<>();
+                    boolean startedCycle = false;
+                    for (int i = 0; i < path.size(); i++)
+                    {
+                        TxnId pathTxnId = path.get(i);
+                        if (startedCycle || pathTxnId.equals(txnId))
+                        {
+                            startedCycle = true;
+                            cycleIds.add(pathTxnId);
+                        }
+                    }
+                    cycleIds.add(txnId);
+                    logger.info("Cycle detected at count {} cycle {}", count, cycleIds);
+
+                    for (TxnId cycleTxnId : cycleIds)
+                    {
+                        Map<Pair<Id, Integer>, Command> depInfo = txnsByCStore.get(cycleTxnId);
+                        Set<SaveStatus> statuses = new HashSet<>();
+                        if (depInfo != null)
+                            for (Command command : depInfo.values())
+                                statuses.add(command.saveStatus());
+                        logger.info("Transaction {} has statuses {} and deps {}", cycleTxnId, statuses, txnsToDependencies.get(cycleTxnId));
+                    }
+                    System.exit(-1);
+                }
+                else
+                {
+                    path.push(txnId);
+                    toProcess.push(txnsToDependencies.getOrDefault(txnId, ImmutableSet.of()).iterator());
+                    seen.add(txnId);
+                }
+            }
+            else
+            {
+                // Since this is a directed graph we may end up seeing this one again and it's fine
+                seen.remove(path.pop());
+                toProcess.pop();
+            }
+        }
     }
 
     private BiFunction<Id, Id, Link> defaultLinks(RandomSource random)
