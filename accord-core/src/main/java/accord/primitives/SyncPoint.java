@@ -72,4 +72,15 @@ public class SyncPoint<S extends Seekables<?, ?>>
         TxnId maxDep = waitFor.maxTxnId();
         return TxnId.nonNullOrMax(maxDep, syncId).epoch();
     }
+
+    @Override
+    public String toString()
+    {
+        return "SyncPoint{" +
+               "syncId=" + syncId +
+               ", keysOrRanges=" + keysOrRanges +
+               ", homeKey=" + homeKey +
+               ", waitFor=" + waitFor +
+               '}';
+    }
 }
