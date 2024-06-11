@@ -156,6 +156,8 @@ public class Apply extends TxnRequest<ApplyReply>
 
     public static ApplyReply apply(SafeCommandStore safeStore, SafeCommand safeCommand, PartialTxn txn, TxnId txnId, Timestamp executeAt, PartialDeps deps, Route<?> route, Writes writes, Result result, RoutingKey progressKey)
     {
+        if (txnId.equals(Node.mysteryId) && safeStore.commandStore().nodeId() == 3 && safeStore.commandStore().id() == 0)
+            System.out.println("oops");
         switch (Commands.apply(safeStore, safeCommand, txnId, route, progressKey, executeAt, deps, txn, writes, result))
         {
             default:

@@ -29,8 +29,12 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.Agent;
 import accord.api.ConfigurationService.EpochReady;
@@ -55,14 +59,8 @@ import accord.utils.MapReduceConsume;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-
 import org.agrona.collections.Hashing;
 import org.agrona.collections.Int2ObjectHashMap;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static accord.api.ConfigurationService.EpochReady.done;
 import static accord.local.PreLoadContext.empty;
@@ -115,9 +113,9 @@ public abstract class CommandStores
         }
     }
 
-    static class ShardHolder
+    public static class ShardHolder
     {
-        final CommandStore store;
+        public final CommandStore store;
         RangesForEpoch ranges;
 
         ShardHolder(CommandStore store)
@@ -335,9 +333,9 @@ public abstract class CommandStores
         }
     }
 
-    static class Snapshot
+    public static class Snapshot
     {
-        final ShardHolder[] shards;
+        public final ShardHolder[] shards;
         final Int2ObjectHashMap<CommandStore> byId;
         final Topology local;
         final Topology global;
@@ -355,7 +353,7 @@ public abstract class CommandStores
 
     final StoreSupplier supplier;
     final ShardDistributor shardDistributor;
-    volatile Snapshot current;
+    public volatile Snapshot current;
     int nextId;
 
     private CommandStores(StoreSupplier supplier, ShardDistributor shardDistributor)

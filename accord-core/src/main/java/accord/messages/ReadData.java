@@ -183,6 +183,9 @@ public abstract class ReadData extends AbstractEpochRequest<ReadData.CommitOrRea
         Command command = safeCommand.current();
         SaveStatus status = command.saveStatus();
 
+        if (txnId.equals(Node.mysteryId) && safeStore.commandStore().nodeId() == 3 && safeStore.commandStore().id() == 0)
+            System.out.println("oops");
+
         logger.trace("{}: setting up read with status {} on {}", txnId, status, safeStore);
         switch (actionForStatus(status))
         {

@@ -121,7 +121,7 @@ public class TxnId extends Timestamp
         return "[" + epoch() + ',' + hlc() + ',' + flags() + '(' + domain().shortName() + kind().shortName() + ')' + ',' + node + ']';
     }
 
-    private static int flags(Kind rw, Domain domain)
+    public static int flags(Kind rw, Domain domain)
     {
         return flags(rw) | flags(domain);
     }

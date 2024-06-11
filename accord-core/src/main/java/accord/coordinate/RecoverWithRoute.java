@@ -19,6 +19,7 @@
 package accord.coordinate;
 
 import java.util.function.BiConsumer;
+import javax.annotation.Nullable;
 
 import accord.local.Node;
 import accord.local.Node.Id;
@@ -40,7 +41,6 @@ import accord.primitives.Txn;
 import accord.primitives.TxnId;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
-import javax.annotation.Nullable;
 
 import static accord.coordinate.CoordinationAdapter.Factory.Step.InitiateRecovery;
 import static accord.coordinate.CoordinationAdapter.Invoke.persist;
@@ -70,6 +70,8 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
         this.promisedBallot = promisedBallot;
         this.callback = callback;
         this.witnessedByInvalidation = witnessedByInvalidation;
+        if (node.id().id == 8 && txnId.toString().equals("[10,10004,6(KS),8]"))
+            System.out.println("oops");
         assert topologies.oldestEpoch() == topologies.currentEpoch() && topologies.currentEpoch() == txnId.epoch();
     }
 

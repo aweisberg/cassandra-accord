@@ -18,6 +18,20 @@
 
 package accord.impl;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.OptionalInt;
+import java.util.Set;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
+import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.impl.basic.NodeSink;
 import accord.local.Node;
 import accord.local.PreLoadContext;
@@ -29,20 +43,6 @@ import accord.messages.TxnRequest;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.topology.Topology;
-
-import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableSet;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.OptionalInt;
-import java.util.Set;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 public interface MessageListener
 {
@@ -88,11 +88,11 @@ public interface MessageListener
         /**
          * When running tests, if this is enabled log events will happen for each matching message type
          */
-        private static final boolean DEBUG = false;
+        private static final boolean DEBUG = true;
         /**
          * When this set is empty all txn events will be logged, but if only specific txn are desired then this filter will limit the logging to just those events
          */
-        private static final Set<TxnId> txnIdFilter = ImmutableSet.of();
+        private static final Set<TxnId> txnIdFilter = ImmutableSet.of(Node.mysteryId, Node.blockingId);
         private static final Map<TxnReplyId, Request> txnReplies = new HashMap<>();
 
         private static int ACTION_SIZE = Stream.of(NodeSink.Action.values()).map(Enum::name).mapToInt(String::length).max().getAsInt();
@@ -110,7 +110,7 @@ public interface MessageListener
                     Request req = txnReplies.get(new TxnReplyId(to, from, id));
                     detailed = req != null ? detailed + " to " + req : detailed + " to unknown request";
                 }
-                logger.debug("Message {}: From {}, To {}, id {}, Message {}", normalize(action), normalize(from), normalize(to), normalizeMessageId(id), detailed);
+                logger.info("Message {}: From {}, To {}, id {}, Message {}", normalize(action), normalize(from), normalize(to), normalizeMessageId(id), detailed);
             }
         }
 
@@ -122,7 +122,7 @@ public interface MessageListener
                 String log = message instanceof Throwable ?
                              "Client  {}: From {}, To {}, id {}" :
                              "Client  {}: From {}, To {}, id {}, Message {}";
-                logger.debug(log, normalize(action), normalize(from), normalize(from), normalize(id), normalizeClientMessage(message));
+                logger.info(log, normalize(action), normalize(from), normalize(from), normalize(id), normalizeClientMessage(message));
             }
         }
 

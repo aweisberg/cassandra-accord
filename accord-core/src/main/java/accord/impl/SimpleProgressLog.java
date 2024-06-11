@@ -39,7 +39,6 @@ import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
 import accord.local.SaveStatus;
-
 import accord.local.SaveStatus.LocalExecution;
 import accord.local.Status.Known;
 import accord.primitives.EpochSupplier;
@@ -58,8 +57,8 @@ import accord.utils.async.AsyncResult;
 
 import static accord.api.ProgressLog.ProgressShard.Unsure;
 import static accord.coordinate.InformHomeOfTxn.inform;
-import static accord.impl.SimpleProgressLog.CoordinateStatus.ReadyToExecute;
 import static accord.impl.SimpleProgressLog.CoordinateStatus.NotStable;
+import static accord.impl.SimpleProgressLog.CoordinateStatus.ReadyToExecute;
 import static accord.impl.SimpleProgressLog.Progress.Done;
 import static accord.impl.SimpleProgressLog.Progress.Expected;
 import static accord.impl.SimpleProgressLog.Progress.Investigating;
@@ -142,6 +141,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
 
                 boolean shouldRun()
                 {
+                    if (txnId().equals(Node.mysteryId) && node.id().id == 3)
+                        System.out.println("shouldRun check");
                     switch (progress)
                     {
                         default: throw new AssertionError("Unexpected progress: " + progress);
@@ -171,12 +172,25 @@ public class SimpleProgressLog implements ProgressLog.Factory
                 {
                     return txnId;
                 }
+
+                @Override
+                protected String valueAsString()
+                {
+                    return txnId().toString();
+                }
             }
 
             // exists only on home shard
             // TODO (expected): should not take any prompt action if we're ourselves already coordinating the transaction
             class CoordinateState extends Monitoring
             {
+
+                public CoordinateState()
+                {
+                    super();
+                    if (txnId.equals(Node.mysteryId))
+                        logger.info("Creating coordinate state " +  node.id() + ":" + commandStore.id());
+                }
                 CoordinateStatus status = CoordinateStatus.NotWitnessed;
                 ProgressToken token = ProgressToken.NONE;
 
@@ -227,6 +241,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                 void run(SafeCommandStore safeStore, SafeCommand safeCommand)
                 {
                     Command command = safeCommand.current();
+                    if (command.txnId().equals(Node.mysteryId) && node.id().id == 3)
+                        System.out.println("SPL monitoring");
                     Invariants.checkState(!safeStore.isTruncated(command), "Command %s is truncated", command);
                     setProgress(Investigating);
                     switch (status)
@@ -238,6 +254,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                             throw illegalState("Unexpected status: " + status);
 
                         case ReadyToExecute:
+                            if (node.id().id == 3 && txnId.equals(Node.mysteryId))
+                                System.out.println("Ready to execute but durability is " + command.durability().isDurableOrInvalidated());
                             // TODO (expected): we should have already exited this loop if this conditions is true
                             if (command.durability().isDurableOrInvalidated())
                             {
@@ -252,6 +270,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                             Invariants.checkState(!token.durability.isDurableOrInvalidated(), "ProgressToken is durable invalidated, but we have not cleared the ProgressLog");
                             Invariants.checkState(!command.durability().isDurableOrInvalidated(), "Command is durable or invalidated, but we have not cleared the ProgressLog");
 
+                            if (node.id().id == 3 && txnId.equals(Node.mysteryId))
+                                System.out.println("Not stable running maybe recover");
                             Route<?> route = Invariants.nonNull(command.route()).withHomeKey();
                             node.withEpoch(txnId.epoch(), () -> {
                                 AsyncResult<? extends Outcome> recover = node.maybeRecover(txnId, route, token);
@@ -260,12 +280,15 @@ public class SimpleProgressLog implements ProgressLog.Factory
                                     commandStore.execute(contextFor(txnId), safeStore0 -> {
                                         if (status.isAtMostReadyToExecute() && progress() == Investigating)
                                         {
+                                            if (node.id().id == 3 && txnId.equals(Node.mysteryId))
+                                                System.out.println("Ran maybe recover, and continuing investigation");
                                             setProgress(Expected);
                                             if (fail != null)
                                                 return;
 
                                             updateMax(success.asProgressToken());
-                                        }
+                                        } else if (node.id().id == 3 && txnId.equals(Node.mysteryId))
+                                            System.out.println("Ran maybe recover, and stopped investigation");
                                     }).begin(node.agent());
                                 });
                             });
@@ -301,6 +324,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                         this.blockedUntil = blockedUntil;
                         setProgress(Expected);
                     }
+                    if (txnId.equals(Node.mysteryId) && node.id().id == 3 && commandStore.id() == 0)
+                        logger.info("Creating blocking state " +  node.id() + ":" + commandStore.id());
                 }
 
                 void record(Known known)
@@ -317,6 +342,9 @@ public class SimpleProgressLog implements ProgressLog.Factory
                 @Override
                 void run(SafeCommandStore safeStore, SafeCommand safeCommand)
                 {
+                    if (txnId.toString().equals("[11,12002,9(RX),5]") && safeStore.commandStore().id() == 0 && safeStore.commandStore().nodeId() == 3)
+                        System.out.println("oops");
+
                     Command command = safeCommand.current();
                     if (command.isAtLeast(blockedUntil))
                     {
@@ -368,11 +396,15 @@ public class SimpleProgressLog implements ProgressLog.Factory
             {
                 NonHomeState()
                 {
+                    if (txnId.equals(Node.mysteryId))
+                        logger.info("Creating non home state " +  node.id() + ":" + commandStore.id());
                     setProgress(Expected);
                 }
 
                 void setSafe()
                 {
+                    if (txnId.equals(Node.mysteryId))
+                        logger.info("Non home state set safe " +  node.id() + ":" + commandStore.id());
                     if (progress() != Done)
                         setProgress(Done);
                 }
@@ -614,6 +646,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
         @Override
         public void waiting(SafeCommand blockedBy, LocalExecution blockedUntil, Route<?> blockedOnRoute, Participants<?> blockedOnParticipants)
         {
+            if (blockedBy.equals(Node.mysteryId) && node.id().id == 3 && commandStore.id() == 0)
+                logger.info("Maybe waiting");
             if (!blockedBy.txnId().kind().isGloballyVisible())
                 return;
 
@@ -677,8 +711,11 @@ public class SimpleProgressLog implements ProgressLog.Factory
                     return;
                 }
 
+                boolean foundTxn = false;
                 for (State.Monitoring run : this)
                 {
+                    if (run.txnId().equals(Node.mysteryId))
+                        foundTxn = true;
                     if (run.shouldRun())
                     {
                         commandStore.execute(contextFor(run.txnId()), safeStore -> {
@@ -691,6 +728,8 @@ public class SimpleProgressLog implements ProgressLog.Factory
                         }).begin(commandStore.agent());
                     }
                 }
+                if (node.id().id == 3 && commandStore.id() == 0 && !foundTxn)
+                    System.out.println("Didn't find the txn we should be monitoring");
             }
             catch (Throwable t)
             {

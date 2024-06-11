@@ -42,4 +42,9 @@ public abstract class IntrusiveLinkedListNode
         }
         Invariants.paranoid(prev == null);
     }
+
+    protected String valueAsString()
+    {
+        return null;
+    }
 }

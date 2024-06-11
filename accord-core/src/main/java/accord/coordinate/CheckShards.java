@@ -24,7 +24,8 @@ import accord.messages.CheckStatus;
 import accord.messages.CheckStatus.CheckStatusOk;
 import accord.messages.CheckStatus.CheckStatusReply;
 import accord.messages.CheckStatus.IncludeInfo;
-import accord.primitives.*;
+import accord.primitives.TxnId;
+import accord.primitives.Unseekables;
 import accord.topology.Topologies;
 import accord.utils.Invariants;
 
@@ -73,6 +74,8 @@ public abstract class CheckShards<U extends Unseekables<?>> extends ReadCoordina
     protected void contact(Id id)
     {
         Unseekables<?> unseekables = route.slice(topologies().computeRangesForNode(id));
+        if (node.id().id == 8 && txnId.toString().equals("[10,10004,6(KS),8]"))
+            System.out.println("oops");
         node.send(id, new CheckStatus(txnId, unseekables, sourceEpoch, includeInfo), this);
     }
 

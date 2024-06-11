@@ -106,5 +106,22 @@ public class IntrusiveLinkedList<O extends IntrusiveLinkedListNode> extends Intr
     {
         return StreamSupport.stream(spliteratorUnknownSize(iterator(), Spliterator.IMMUTABLE), false);
     }
+
+    public String toString()
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append('[');
+        boolean first = true;
+        for (O value : this)
+        {
+            if (first)
+                first = false;
+            else
+                sb.append(", ");
+            sb.append(value.valueAsString());
+        }
+        sb.append(']');
+        return sb.toString();
+    }
 }
 

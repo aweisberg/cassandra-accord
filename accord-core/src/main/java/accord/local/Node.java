@@ -79,6 +79,7 @@ import accord.primitives.Route;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
+import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import accord.primitives.Unseekables;
 import accord.topology.Shard;
@@ -94,12 +95,23 @@ import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
 import net.nicoulaj.compilecommand.annotations.Inline;
 
+import static accord.primitives.TxnId.flags;
 import static accord.utils.Invariants.illegalState;
 import static java.lang.String.format;
 
 public class Node implements ConfigurationService.Listener, NodeTimeService
 {
     private static final Logger logger = LoggerFactory.getLogger(Node.class);
+
+    //[13,18171,9(RX),2]
+//    public static final TxnId mysteryId = TxnId.fromValues(13, 18171, flags(Kind.ExclusiveSyncPoint, Domain.Range), 2);
+    // [9,9139,9(RX),9]
+//    public static final TxnId mysteryId = TxnId.fromValues(9, 9139, flags(Txn.Kind.ExclusiveSyncPoint, Domain.Range), 9);
+    //[10,10004,6(KS),8]
+//    [13,18171,9(RX),2]/[13,18171,9(RX),2] waiting on [11,12002,9(RX),5]/[11,12002,9(RX),5], minStatus ((3,0),PreApplied), statuses [((3,0),PreApplied)], waitingOnTxns {(3,0)=[[10,10004,6(KS),8]]} waitingOnKeys {(3,0)=[0:-215249258#2337]}
+    public static final TxnId blockingId = TxnId.fromValues(10, 10004, flags(Kind.SyncPoint, Domain.Key), 8);
+    //[11,12002,9(RX),5]
+    public static final TxnId mysteryId = TxnId.fromValues(11, 12002, flags(Kind.ExclusiveSyncPoint, Domain.Range), 5);
 
     public static class Id implements Comparable<Id>
     {

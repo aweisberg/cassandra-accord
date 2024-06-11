@@ -28,7 +28,6 @@ import javax.annotation.Nullable;
 import com.google.common.annotations.VisibleForTesting;
 
 import accord.api.Key;
-
 import accord.impl.CommandsSummary;
 import accord.local.SafeCommandStore.CommandFunction;
 import accord.local.SafeCommandStore.TestDep;
@@ -51,10 +50,10 @@ import accord.utils.SortedList;
 import static accord.local.CommandsForKey.InternalStatus.ACCEPTED;
 import static accord.local.CommandsForKey.InternalStatus.APPLIED;
 import static accord.local.CommandsForKey.InternalStatus.COMMITTED;
-import static accord.local.CommandsForKey.InternalStatus.PREACCEPTED;
-import static accord.local.CommandsForKey.InternalStatus.STABLE;
 import static accord.local.CommandsForKey.InternalStatus.HISTORICAL;
 import static accord.local.CommandsForKey.InternalStatus.INVALID_OR_TRUNCATED;
+import static accord.local.CommandsForKey.InternalStatus.PREACCEPTED;
+import static accord.local.CommandsForKey.InternalStatus.STABLE;
 import static accord.local.CommandsForKey.InternalStatus.TRANSITIVELY_KNOWN;
 import static accord.local.CommandsForKey.InternalStatus.from;
 import static accord.local.CommandsForKey.Unmanaged.Pending.APPLY;
@@ -1164,6 +1163,9 @@ public class CommandsForKey implements CommandsSummary
     {
         TxnInfo prevInfo = prevCfk.get(updatedTxnId);
 
+        if (key.toString().equals("0:-215249258#2337") && safeStore.commandStore().id == 0 && safeStore.commandStore().nodeId() == 3 && updatedTxnId.equals(Node.blockingId))
+            System.out.println("cfk notifyAndUpdatePending " + updatedTxnId + " newStatus " + newStatus + " newExecuteAt " + newExecuteAt);
+
         switch (newStatus)
         {
             default: throw new AssertionError("Unhandled InternalStatus: " + newStatus);
@@ -1230,6 +1232,8 @@ public class CommandsForKey implements CommandsSummary
         if (redundantBefore.endEpoch <= uncommitted.epoch())
             return;
 
+        if (key.toString().equals("0:-215249258#2337") && safeStore.commandStore().id == 0 && safeStore.commandStore().nodeId() == 3)
+            System.out.println("cfk notifyWaitingOnCommit " + uncommitted);
         TxnId txnId = uncommitted.asPlainTxnId();
         if (uncommitted.status.compareTo(PREACCEPTED) < 0)
         {
@@ -1405,6 +1409,10 @@ public class CommandsForKey implements CommandsSummary
 
     public CommandsForKey registerUnmanaged(SafeCommandStore safeStore, SafeCommand safeCommand)
     {
+        if (key.toString().equals("0:-215249258#2337") && safeStore.commandStore().id == 0 && safeStore.commandStore().nodeId() == 3)
+            System.out.println("Registering unmanaged " + safeCommand.txnId());
+        if (safeCommand.txnId().equals(Node.mysteryId) && key.toString().equals("0:-215249258#2337") && safeStore.commandStore().id == 0 && safeStore.commandStore().nodeId() == 3)
+            System.out.println("oops");
         if (safeCommand.current().hasBeen(Status.Truncated))
             return this;
 

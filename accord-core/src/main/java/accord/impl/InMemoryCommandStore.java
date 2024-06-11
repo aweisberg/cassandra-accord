@@ -41,9 +41,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
-
-import accord.local.*;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,7 +48,19 @@ import accord.api.Agent;
 import accord.api.DataStore;
 import accord.api.Key;
 import accord.api.ProgressLog;
+import accord.local.Command;
+import accord.local.CommandStore;
 import accord.local.CommandStores.RangesForEpoch;
+import accord.local.CommandsForKey;
+import accord.local.KeyHistory;
+import accord.local.Listeners;
+import accord.local.NodeTimeService;
+import accord.local.PreLoadContext;
+import accord.local.SafeCommand;
+import accord.local.SafeCommandStore;
+import accord.local.SafeCommandsForKey;
+import accord.local.SaveStatus;
+import accord.local.Status;
 import accord.primitives.AbstractKeys;
 import accord.primitives.Deps;
 import accord.primitives.PartialDeps;
@@ -73,15 +82,15 @@ import accord.utils.async.AsyncChains;
 
 import static accord.local.SafeCommandStore.TestDep.ANY_DEPS;
 import static accord.local.SafeCommandStore.TestDep.WITH;
-import static accord.local.SafeCommandStore.TestStatus.ANY_STATUS;
 import static accord.local.SafeCommandStore.TestStartedAt.STARTED_BEFORE;
+import static accord.local.SafeCommandStore.TestStatus.ANY_STATUS;
 import static accord.local.SaveStatus.Applying;
 import static accord.local.SaveStatus.Erased;
 import static accord.local.SaveStatus.ReadyToExecute;
 import static accord.local.Status.Applied;
+import static accord.local.Status.NotDefined;
 import static accord.local.Status.Stable;
 import static accord.local.Status.Truncated;
-import static accord.local.Status.NotDefined;
 import static accord.primitives.Routables.Slice.Minimal;
 import static accord.utils.Invariants.illegalState;
 import static java.lang.String.format;
@@ -91,7 +100,7 @@ public abstract class InMemoryCommandStore extends CommandStore
     private static final Logger logger = LoggerFactory.getLogger(InMemoryCommandStore.class);
     private static final boolean CHECK_DEPENDENCY_INVARIANTS = false;
 
-    final NavigableMap<TxnId, GlobalCommand> commands = new TreeMap<>();
+    public final NavigableMap<TxnId, GlobalCommand> commands = new TreeMap<>();
     final NavigableMap<Timestamp, GlobalCommand> commandsByExecuteAt = new TreeMap<>();
     private final NavigableMap<RoutableKey, GlobalTimestampsForKey> timestampsForKey = new TreeMap<>();
     private final NavigableMap<RoutableKey, GlobalCommandsForKey> commandsForKey = new TreeMap<>();

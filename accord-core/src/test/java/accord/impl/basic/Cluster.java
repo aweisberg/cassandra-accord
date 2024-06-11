@@ -20,13 +20,20 @@ package accord.impl.basic;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -37,11 +44,15 @@ import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import org.junit.jupiter.api.Assertions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.BarrierType;
+import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Scheduler;
 import accord.burn.BurnTestConfigurationService;
@@ -56,16 +67,23 @@ import accord.coordinate.Invalidated;
 import accord.coordinate.Preempted;
 import accord.coordinate.Timeout;
 import accord.impl.CoordinateDurabilityScheduling;
+import accord.impl.InMemoryCommandStore.GlobalCommand;
 import accord.impl.MessageListener;
 import accord.impl.PrefixedIntHashKey;
 import accord.impl.SimpleProgressLog;
 import accord.impl.SizeOfIntersectionSorter;
 import accord.impl.TopologyFactory;
+import accord.impl.basic.DelayedCommandStores.DelayedCommandStore;
 import accord.impl.list.ListStore;
 import accord.local.AgentExecutor;
-import accord.local.Node.Id;
+import accord.local.Command;
+import accord.local.Command.Committed;
+import accord.local.Command.WaitingOn;
+import accord.local.CommandStores.ShardHolder;
 import accord.local.Node;
+import accord.local.Node.Id;
 import accord.local.NodeTimeService;
+import accord.local.SaveStatus;
 import accord.local.ShardDistributor;
 import accord.messages.Message;
 import accord.messages.MessageType;
@@ -73,14 +91,17 @@ import accord.messages.Reply;
 import accord.messages.Request;
 import accord.messages.SafeCallback;
 import accord.primitives.Keys;
+import accord.primitives.PartialDeps;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
+import accord.primitives.TxnId;
 import accord.topology.Topology;
 import accord.topology.TopologyRandomizer;
 import accord.utils.Gens;
 import accord.utils.Invariants;
+import accord.utils.Pair;
 import accord.utils.RandomSource;
 import accord.utils.async.AsyncChains;
 import accord.utils.async.AsyncResult;
@@ -101,6 +122,7 @@ import static java.util.stream.Collectors.toList;
 
 public class Cluster implements Scheduler
 {
+    public static final Logger logger = LoggerFactory.getLogger("Cluster");
     public static final Logger trace = LoggerFactory.getLogger("accord.impl.basic.Trace");
 
     public static class Stats
@@ -274,6 +296,11 @@ public class Cluster implements Scheduler
         run.run();
     }
 
+    public static final long cycleCheckFrequency = 100_000;
+    public static final long cycleCheckStart = -1;
+//    public static final long cycleCheckStart = 0 - cycleCheckFrequency;
+
+
     public static Map<MessageType, Stats> run(Id[] nodes, MessageListener messageListener, Supplier<PendingQueue> queueSupplier,
                                               BiFunction<Id, BiConsumer<Timestamp, Ranges>, AgentExecutor> nodeExecutorSupplier,
                                               Runnable checkFailures, Consumer<Packet> responseSink,
@@ -376,7 +403,15 @@ public class Cluster implements Scheduler
             while ((next = in.get()) != null)
                 sinks.add(next, 0, TimeUnit.NANOSECONDS);
 
-            while (sinks.processPending());
+            long count = 0;
+            while (true)
+            {
+                if (!sinks.processPending())
+                    break;
+                count++;
+                if (count >= cycleCheckStart && (count - cycleCheckStart) % cycleCheckFrequency == 0)
+                    sinks.cycleCheck(count);
+            }
 
             chaos.cancel();
             reconfigure.cancel();
@@ -596,9 +631,9 @@ public class Cluster implements Scheduler
     {
         Supplier<OverrideLinkKind> nextKind = random.randomWeightedPicker(OverrideLinkKind.values());
         Supplier<LongSupplier> latencySupplier = random.biasedUniformLongsSupplier(
-            MILLISECONDS.toMicros(1L), SECONDS.toMicros(2L),
-            MILLISECONDS.toMicros(1L), MILLISECONDS.toMicros(300L), SECONDS.toMicros(1L),
-            MILLISECONDS.toMicros(1L), MILLISECONDS.toMicros(300L), SECONDS.toMicros(1L)
+        MILLISECONDS.toMicros(1L), SECONDS.toMicros(2L),
+        MILLISECONDS.toMicros(1L), MILLISECONDS.toMicros(300L), SECONDS.toMicros(1L),
+        MILLISECONDS.toMicros(1L), MILLISECONDS.toMicros(300L), SECONDS.toMicros(1L)
         );
         NodeSink.Action[] actions = NodeSink.Action.values();
         Supplier<Supplier<NodeSink.Action>> actionSupplier = () -> random.randomWeightedPicker(actions);
@@ -643,6 +678,310 @@ public class Cluster implements Scheduler
                     return randomOverrides(bidirectional, linkOverride, count, nodesList, random, defaultLinks);
             }
         };
+    }
+
+    private static Timestamp executeAt(TxnId txnId, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore)
+    {
+        Timestamp executeAt = null;
+        Map<Pair<Id, Integer>, Command> commands = txnsByCStore.get(txnId);
+        if (commands == null)
+            return null;
+
+        for (Map.Entry<Pair<Id, Integer>, Command> commandPair : commands.entrySet())
+        {
+            Command command = commandPair.getValue();
+            if (!command.saveStatus().known.executeAt.isDecided())
+                continue;
+            Timestamp newExecuteAt = commandPair.getValue().executeAt();
+            if (executeAt == null)
+                executeAt = commandPair.getValue().executeAt();
+            else if (newExecuteAt == null)
+                continue;
+            else if (!executeAt.equals(newExecuteAt))
+            {
+                System.out.println(String.format("Multiple execute at for %s, had %s and %s", txnId, executeAt, commandPair.getValue().executeAt()));
+                System.exit(-1);
+            }
+        }
+        if (executeAt == null)
+            executeAt = txnId;
+        return executeAt;
+    }
+
+    private void cycleCheck(long count)
+    {
+        long start = System.currentTimeMillis();
+        Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore = new TreeMap<>();
+        Map<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> txnsToDependencies = new TreeMap<>();
+        for (Id id : sinks.keySet())
+        {
+            Node n = lookup.apply(id);
+            for (ShardHolder holder : n.commandStores().current.shards)
+            {
+                DelayedCommandStore commandStore = (DelayedCommandStore) holder.store;
+                for (Map.Entry<TxnId, GlobalCommand> commandEntry : commandStore.commands.entrySet())
+                {
+                    Command command = commandEntry.getValue().value();
+                    if (command == null)
+                        continue;
+                    Map<Pair<Id, Integer>, Command> nodeTxns = txnsByCStore.computeIfAbsent(commandEntry.getKey(), ignored -> new TreeMap<>(cstoreKeyComparator));
+                    nodeTxns.put(Pair.create(id, commandStore.id()), command);
+                    if (!(command.saveStatus().ordinal() >= SaveStatus.Stable.ordinal()))
+                        continue;
+                    PartialDeps deps = command.partialDeps() != null ? command.partialDeps() : PartialDeps.NONE;
+                    if (command.txnId().equals(Node.mysteryId) && commandStore.id() == 24)
+                        System.out.println("oops");
+                    Map<TxnId, Pair<Set<Key>, Set<Range>>> dependencies = txnsToDependencies.computeIfAbsent(commandEntry.getKey(), ignored -> new TreeMap<>());
+                    for (Key key : deps.keyDeps.keys())
+                    {
+                        for (TxnId keyTxnId : deps.keyDeps.txnIds(key))
+                        {
+                            Pair<Set<Key>, Set<Range>> p = dependencies.computeIfAbsent(keyTxnId, ignored -> Pair.create(new TreeSet<>(), new TreeSet<>(rangeComparator)));
+                            p.left.add(key);
+                        }
+                    }
+                    for (Map.Entry<Range, TxnId> depsEntry : deps.rangeDeps)
+                    {
+                        Pair<Set<Key>, Set<Range>> p = dependencies.computeIfAbsent(depsEntry.getValue(), ignored -> Pair.create(new TreeSet<>(), new TreeSet<>(rangeComparator)));
+                        p.right.add(depsEntry.getKey());
+                    }
+                }
+            }
+        }
+
+        // Prune by executeAt
+        for (Map.Entry<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> e : txnsToDependencies.entrySet())
+        {
+            TxnId txnId = e.getKey();
+            Set<TxnId> dependencies = e.getValue().keySet();
+            Timestamp executeAt = executeAt(txnId, txnsByCStore);
+            Iterator<TxnId> dependencyIterator = dependencies.iterator();
+            while (dependencyIterator.hasNext())
+            {
+                TxnId dependencyTxnId = dependencyIterator.next();
+                Timestamp dependencyExecuteAt = executeAt(dependencyTxnId, txnsByCStore);
+                int compareTo = dependencyExecuteAt.compareTo(executeAt);
+                if (compareTo > 0)
+                    dependencyIterator.remove();
+                else if (compareTo == 0)
+                {
+                    logger.error("Imposssible!");
+                    System.exit(-1);
+                }
+            }
+        }
+
+        checkTransactionState(Node.mysteryId, txnsByCStore, txnsToDependencies);
+//        logger.info("Starting cycle detection with txnCount {}", txnsToDependencies.size());
+
+        //Not 100% sure thios is owrking through all the changes
+//        Set<TxnId> seen = new HashSet<>();
+//        Set<TxnId> currentlyRecursing = new HashSet<>();
+//        Stack<Iterator<TxnId>> toProcess = new Stack<>();
+//        Stack<TxnId> path = new Stack<>();
+//        for (TxnId txnId : txnsToDependencies.keySet())
+//        {
+//            if (seen.contains(txnId))
+//                continue;
+//            else
+//                seen.add(txnId);
+//
+//            path.push(txnId);
+//            currentlyRecursing.add(txnId);
+//            toProcess.push(txnsToDependencies.get(txnId).keySet().iterator());
+//
+//            processDependencies(count, toProcess, seen, path, txnsByCStore, txnsToDependencies, currentlyRecursing);
+//        }
+//        logger.info("Cycle check took {}ms for {} txns", System.currentTimeMillis() - start, txnsToDependencies.keySet().size());
+    }
+
+    static List<Pair<Pair<Id, Integer>, SaveStatus>> getStatuses(TxnId txnId, Map<TxnId, Map<Pair<Id, Integer>, Command>>  txnsByCStore)
+    {
+        Map<Pair<Id, Integer>, Command> info = txnsByCStore.get(txnId);
+        if (info == null)
+            return Collections.emptyList();
+        List<Pair<Pair<Id, Integer>, SaveStatus>> statuses = new ArrayList<>();
+        for (Map.Entry<Pair<Id, Integer>, Command> e : info.entrySet())
+        {
+//            if (e.getKey().right != 0)
+//                continue;
+//            if (e.getKey().left.id != 3)
+//                continue;
+            statuses.add(Pair.create(e.getKey(), e.getValue().saveStatus()));
+        }
+        return statuses;
+    }
+
+    static Pair<Pair<Id, Integer>, SaveStatus> minStatus(List<Pair<Pair<Id, Integer>, SaveStatus>> statuses)
+    {
+        Pair<Pair<Id, Integer>, SaveStatus> status = null;
+        for (Pair<Pair<Id, Integer>, SaveStatus> s : statuses)
+        {
+            if (status == null)
+                status = s;
+            else if (s.right.compareTo(status.right) < 0)
+                status = s;
+        }
+        return status;
+    }
+
+    //broken
+//    static Set<TxnId> keyDepsToTxns(TxnId txnId, Iterable<Key> keys, Map<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> txnsToDependencies)
+//    {
+//        Set<TxnId> txnIds = new TreeSet<>();
+//
+//        for (Key k : keys)
+//        {
+////            TxnId closestRangeDep
+//            for (Map.Entry<TxnId, Pair<Set<Key>, Set<Range>>> e : txnsToDependencies.get(txnId).entrySet())
+//            {
+//                if (e.getValue().left.contains(k))
+//                    txnIds.add(e.getKey());
+//                for (Range r : e.getValue().right)
+//                {
+//                    if (r.contains(k))
+//                        txnIds.add(e.getKey());
+//                }
+//            }
+//        }
+//        return txnIds;
+//    }
+
+    private void checkTransactionState(TxnId targetTxnId, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, Map<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> txnsToDependencies)
+    {
+        Pair<Multimap<Pair<Id, Integer>, TxnId>, Multimap<Pair<Id, Integer>, Key>> waitingOn = getWaitingOn(targetTxnId, txnsByCStore, txnsToDependencies, true);
+
+        logger.info("All waiting on status for {}/{}, with minStatus {}, waitingOn (directly and indirectly) txns {} keys {}, status {}", targetTxnId, executeAt(targetTxnId, txnsByCStore), minStatus(getStatuses(Node.mysteryId, txnsByCStore)), waitingOn.left, waitingOn.right, getStatuses(Node.mysteryId, txnsByCStore));
+
+        for (TxnId id : waitingOn.left.values())
+        {
+            List<Pair<Pair<Id, Integer>, SaveStatus>> statuses = getStatuses(id, txnsByCStore);
+            Pair<Multimap<Pair<Id, Integer>, TxnId>, Multimap<Pair<Id, Integer>, Key>> thisWaitingOn = getWaitingOn(id, txnsByCStore, txnsToDependencies, false);
+//            if (statuses.contains(SaveStatus.Applied) || statuses.contains(SaveStatus.Invalidated))
+//                continue;
+            logger.info("{}/{} waiting on {}/{}, minStatus {}, statuses {}, waitingOnTxns {} waitingOnKeys {}", targetTxnId, executeAt(targetTxnId, txnsByCStore), id, executeAt(id, txnsByCStore), minStatus(statuses), statuses, thisWaitingOn.left, thisWaitingOn.right);
+        }
+    }
+
+    static void forEachCommand(Function<Map.Entry<Pair<Id, Integer>, Command>, Collection<TxnId>> f, TxnId txnId, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, boolean indirect)
+    {
+        forEachCommand(f, txnId, txnsByCStore, indirect, new HashSet<>());
+    }
+
+    static void forEachCommand(Function<Map.Entry<Pair<Id, Integer>, Command>, Collection<TxnId>> f, TxnId txnId, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, boolean indirect, Set<TxnId> alreadyProcessed)
+    {
+        if (alreadyProcessed.contains(txnId))
+            return;
+        alreadyProcessed.add(txnId);
+
+        Set<TxnId> toVisit = new TreeSet<>();
+
+        txnsByCStore.getOrDefault(txnId, Collections.emptyMap()).entrySet().forEach(v -> toVisit.addAll(f.apply(v)));
+
+        if (indirect)
+        {
+            toVisit.forEach(nextTxnId -> forEachCommand(f, nextTxnId, txnsByCStore, indirect, alreadyProcessed));
+        }
+    }
+
+    static final Comparator<Pair<Id, Integer>> cstoreKeyComparator = (a, b) -> {
+        int compare = a.left.compareTo(b.left);
+        if (compare != 0)
+            return compare;
+        return a.right.compareTo(b.right);
+    };
+
+    static final Comparator<Range> rangeComparator = (a, b) -> {
+        int cmp = a.start().compareTo(b.start());
+        if (cmp == 0)
+            return 0;
+        return a.end().compareTo(b.end());
+    };
+
+    private static Pair<Multimap<Pair<Id, Integer>, TxnId>, Multimap<Pair<Id, Integer>, Key>> getWaitingOn(TxnId txnId, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, Map<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> txnsToDependencies, boolean indirect)
+    {
+        Multimap<Pair<Id, Integer>, TxnId> txnIds = Multimaps.newSortedSetMultimap(new TreeMap(cstoreKeyComparator), TreeSet::new);
+        Multimap<Pair<Id, Integer>, Key> keys = Multimaps.newSortedSetMultimap(new TreeMap(cstoreKeyComparator), TreeSet::new);
+
+        forEachCommand(e -> {
+            Command c = e.getValue();
+            Set<TxnId> indirects = new HashSet<>();
+            if (c instanceof Committed)
+            {
+                PartialDeps partialDeps = c.partialDeps();
+                WaitingOn waitingOn = ((Committed) c).waitingOn();
+                if (waitingOn != null)
+                {
+                    Pair<List<TxnId>, List<Key>> p = waitingOn.waitingOnStuff();
+                    if (p.left.isEmpty() && p.right.isEmpty())
+                        return indirects;
+                    txnIds.putAll(e.getKey(), p.left);
+                    indirects.addAll(p.left);
+                    for (Key k : p.right)
+                    {
+                        txnIds.putAll(e.getKey(), partialDeps.keyDeps.txnIds(k));
+                        indirects.addAll(partialDeps.keyDeps.txnIds(k));
+                    }
+                    keys.putAll(e.getKey(), p.right);
+                }
+            }
+            return indirects;
+        }, txnId, txnsByCStore, indirect);
+
+        return Pair.create(txnIds, keys);
+    }
+
+    private static void processDependencies(long count, Stack<Iterator<TxnId>> toProcess, Set<TxnId> seen, Stack<TxnId> path, Map<TxnId, Map<Pair<Id, Integer>, Command>> txnsByCStore, Map<TxnId, Map<TxnId, Pair<Set<Key>, Set<Range>>>> txnsToDependencies, Set<TxnId> currentlyRecursing)
+    {
+        while (!toProcess.isEmpty())
+        {
+            Iterator<TxnId> iterator = toProcess.peek();
+            if (iterator.hasNext())
+            {
+                TxnId txnId = iterator.next();
+                boolean alreadySeen = seen.contains(txnId);
+                boolean alreadySeenRecursing = currentlyRecursing.contains(txnId);
+                if (alreadySeen && alreadySeenRecursing)
+                {
+                    List<TxnId> cycleIds = new ArrayList<>();
+                    boolean startedCycle = false;
+                    for (int i = 0; i < path.size(); i++)
+                    {
+                        TxnId pathTxnId = path.get(i);
+                        if (startedCycle || pathTxnId.equals(txnId))
+                        {
+                            startedCycle = true;
+                            cycleIds.add(pathTxnId);
+                        }
+                    }
+                    cycleIds.add(txnId);
+                    logger.info("Cycle detected at count {} cycle {}", count, cycleIds);
+
+                    for (TxnId cycleTxnId : cycleIds)
+                    {
+                        Map<Pair<Id, Integer>, Command> depInfo = txnsByCStore.get(cycleTxnId);
+                        Set<SaveStatus> statuses = new HashSet<>();
+                        if (depInfo != null)
+                            for (Command command : depInfo.values())
+                                statuses.add(command.saveStatus());
+                        logger.info("Transaction {} has statuses {} and deps {}", cycleTxnId, statuses, txnsToDependencies.get(cycleTxnId));
+                    }
+                    System.exit(-1);
+                }
+                else if (!alreadySeen)
+                {
+                    path.push(txnId);
+                    toProcess.push(txnsToDependencies.getOrDefault(txnId, ImmutableMap.of()).keySet().iterator());
+                    seen.add(txnId);
+                    currentlyRecursing.add(txnId);
+                }
+            }
+            else
+            {
+                currentlyRecursing.remove(path.pop());
+                toProcess.pop();
+            }
+        }
     }
 
     private BiFunction<Id, Id, Link> defaultLinks(RandomSource random)

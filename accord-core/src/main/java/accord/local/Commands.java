@@ -629,6 +629,8 @@ public class Commands
 
     private static void apply(SafeCommandStore safeStore, Command.Executed command)
     {
+        if (command.txnId().equals(Node.mysteryId) && safeStore.commandStore().id() == 0)
+            System.out.println("oops");
         CommandStore unsafeStore = safeStore.commandStore();
         TxnId txnId = command.txnId();
         // TODO (expected): there is some coupling going on here - concept of TIMESTAMPS only needed if implementation tracks on apply
@@ -749,7 +751,10 @@ public class Commands
             u.initialiseWaiting(rd.txnIdCount() + i);
             return null;
         }, update, deps.rangeDeps, null);
-        return updateWaitingOn(safeStore, waiting, waitingExecuteAt, update, route.participants()).build();
+        WaitingOn waitingOn = updateWaitingOn(safeStore, waiting, waitingExecuteAt, update, route.participants()).build();
+        if (waitingId.toString().equals("[11,12002,9(RX),5]") && safeStore.commandStore().id == 0 && safeStore.commandStore().nodeId() == 3)
+            System.out.println("Initializing waiting on for " + waitingId + " " + waitingOn);
+        return waitingOn;
     }
 
     protected static WaitingOn.Update updateWaitingOn(SafeCommandStore safeStore, CommonAttributes waiting, Timestamp executeAt, WaitingOn.Update update, Participants<?> participants)
@@ -831,6 +836,7 @@ public class Commands
 
     static void updateDependencyAndMaybeExecute(SafeCommandStore safeStore, SafeCommand safeCommand, SafeCommand predecessor, boolean notifyWaitingOn)
     {
+//        if (safeCommand.txnId().equals(Node.mysteryId) && safeStore.)
         Command.Committed command = safeCommand.current().asCommitted();
         if (command.hasBeen(Applied))
             return;
@@ -1023,6 +1029,8 @@ public class Commands
         public void accept(SafeCommandStore safeStore)
         {
             SafeCommand waitingSafe = safeStore.get(waitingId);
+            if (waitingId.equals(Node.mysteryId) && safeStore.commandStore().nodeId() == 3 && safeStore.commandStore().id == 0)
+                logger.info("Running NotifyWaitingOn for " + waitingId);
             SafeCommand depSafe = null;
             {
                 Command waiting = waitingSafe.current();

@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import javax.annotation.Nullable;
 
 import accord.api.Key;
 import accord.api.Result;
@@ -46,9 +47,9 @@ import accord.utils.ImmutableBitSet;
 import accord.utils.IndexedQuadConsumer;
 import accord.utils.IndexedTriConsumer;
 import accord.utils.Invariants;
+import accord.utils.Pair;
 import accord.utils.SimpleBitSet;
 import accord.utils.SortedArrays.SortedArrayList;
-import javax.annotation.Nullable;
 
 import static accord.local.Command.AbstractCommand.validate;
 import static accord.local.Listeners.Immutable.EMPTY;
@@ -1365,6 +1366,17 @@ public abstract class Command implements CommonAttributes
         private int nextWaitingOnIndex()
         {
             return waitingOn.prevSetBit(txnIds.size());
+        }
+
+        public Pair<List<TxnId>, List<Key>> waitingOnStuff()
+        {
+            List<TxnId> waitingOnTxnIds = new ArrayList<>();
+            List<Key> waitingOnKeys = new ArrayList<>();
+            waitingOn.reverseForEach(waitingOnTxnIds, waitingOnKeys, txnIds, keys, (outIds, outKeys, ids, ks, i) -> {
+                if (i < ids.size()) outIds.add(ids.get(i));
+                else outKeys.add(ks.get(i - ids.size()));
+            });
+            return Pair.create(waitingOnTxnIds, waitingOnKeys);
         }
 
         private static String toString(Keys keys, SortedArrayList<TxnId> txnIds, SimpleBitSet waitingOn)

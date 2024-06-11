@@ -109,6 +109,8 @@ public class ApplyThenWaitUntilApplied extends WaitUntilApplied
     public CommitOrReadNack apply(SafeCommandStore safeStore)
     {
         RoutingKey progressKey = TxnRequest.progressKey(node, txnId.epoch(), txnId, route);
+        if (safeStore.commandStore().id() == 0 && txnId.equals(Node.mysteryId) && node.id().id == 3)
+            System.out.println("oops");
         ApplyReply applyReply = Apply.apply(safeStore, txn, txnId, executeAt, deps, route, writes, result, progressKey);
         switch (applyReply)
         {
