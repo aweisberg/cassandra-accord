@@ -30,6 +30,7 @@ import accord.api.DataStore.FetchRanges;
 import accord.api.DataStore.FetchResult;
 import accord.api.DataStore.StartingRangeFetch;
 import accord.coordinate.CoordinateSyncPoint;
+import accord.coordinate.CoordinationFailed;
 import accord.coordinate.FetchMaxConflict;
 import accord.primitives.Ranges;
 import accord.primitives.Routable;
@@ -125,8 +126,10 @@ class Bootstrap
             if (!node.topology().hasEpoch(globalSyncId.epoch()))
             {
                 // Ignore timeouts fetching the epoch, always keep trying to bootstrap
-                // TODO (review): begin wasn't being called so this leaked, but what to do with the error?
-                node.withEpoch(globalSyncId.epoch(), (ignored, failure) -> store.execute(empty(), Attempt.this::start).begin((ignored1, ignored2) -> {}));
+                node.withEpoch(globalSyncId.epoch(), (ignored, failure) -> store.execute(empty(), Attempt.this::start).begin((ignored1, failure2) -> {
+                    if (failure2 != null)
+                        node.agent().onUncaughtException(CoordinationFailed.wrap(failure2));
+                }));
                 return;
             }
 
@@ -233,9 +236,9 @@ class Bootstrap
                         state.startedAt = logicalClock++;
                 }
                 // TODO (expected): associate callbacks with this CommandStore, to remove synchronization
-                FetchMaxConflict.fetchMaxConflict(node, store, state.ranges)
+                FetchMaxConflict.fetchMaxConflict(node, state.ranges)
                                 .begin((executeAt, failure) -> {
-                                    store.execute(() -> safeToReadCallback(state, executeAt, failure));
+                                    store.maybeExecuteImmediately(() -> safeToReadCallback(state, executeAt, failure));
                                 });
             }
             else

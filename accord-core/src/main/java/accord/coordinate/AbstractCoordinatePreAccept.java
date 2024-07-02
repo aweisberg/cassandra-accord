@@ -24,9 +24,6 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import javax.annotation.Nullable;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import accord.coordinate.tracking.QuorumTracker;
 import accord.local.Node;
 import accord.local.Node.Id;
@@ -47,8 +44,6 @@ import static accord.coordinate.tracking.RequestStatus.Success;
  */
 abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> implements Callback<R>, BiConsumer<T, Throwable>
 {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractCoordinatePreAccept.class);
-
     class ExtraEpochs implements Callback<R>
     {
         final QuorumTracker tracker;
@@ -219,7 +214,7 @@ abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> imple
         node.withEpoch(latestEpoch, (ignored, withEpochFailure) -> {
             if (withEpochFailure != null)
             {
-                tryFailure(withEpochFailure);
+                tryFailure(CoordinationFailed.wrap(withEpochFailure));
                 return;
             }
             TopologyMismatch mismatch = TopologyMismatch.checkForMismatch(node.topology().globalForEpoch(latestEpoch), txnId, route.homeKey(), keysOrRanges());

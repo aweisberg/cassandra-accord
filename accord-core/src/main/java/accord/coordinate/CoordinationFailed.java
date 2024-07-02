@@ -23,6 +23,8 @@ import javax.annotation.Nullable;
 import accord.api.RoutingKey;
 import accord.primitives.TxnId;
 
+import static accord.utils.Invariants.checkState;
+
 /**
  * Thrown when a transaction exceeds its specified timeout for obtaining a result for a client
  */
@@ -39,6 +41,13 @@ public class CoordinationFailed extends RuntimeException
     public CoordinationFailed(@Nullable TxnId txnId, @Nullable RoutingKey homeKey, String message)
     {
         super(message);
+        this.txnId = txnId;
+        this.homeKey = homeKey;
+    }
+
+    protected CoordinationFailed(@Nullable TxnId txnId, @Nullable RoutingKey homeKey, CoordinationFailed cause)
+    {
+        super(cause);
         this.txnId = txnId;
         this.homeKey = homeKey;
     }
@@ -60,5 +69,22 @@ public class CoordinationFailed extends RuntimeException
     public @Nullable RoutingKey homeKey()
     {
         return homeKey;
+    }
+
+    /**
+     * Wrap the exception without changing the type so asynchronous callbacks can add their own stack
+     */
+    public CoordinationFailed wrap()
+    {
+        checkState(this.getClass() == CoordinationFailed.class);
+        return new CoordinationFailed(txnId, homeKey, this);
+    }
+
+    public static Throwable wrap(Throwable t)
+    {
+        if (t instanceof CoordinationFailed)
+            return ((CoordinationFailed)t).wrap();
+        else
+            throw new RuntimeException(t);
     }
 }

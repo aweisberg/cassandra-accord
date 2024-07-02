@@ -94,7 +94,7 @@ public interface CoordinationAdapter<R>
             {
                 node.withEpoch(executeAt.epoch(), (ignore, withEpochFailure) -> {
                     if (withEpochFailure != null)
-                        callback.accept(null, withEpochFailure);
+                        callback.accept(null, CoordinationFailed.wrap(withEpochFailure));
                     else
                         stabilise(adapter, node, any, route, ballot, txnId, txn, executeAt, deps, callback);
                 });

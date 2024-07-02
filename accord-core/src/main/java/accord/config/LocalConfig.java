@@ -22,8 +22,22 @@ import java.time.Duration;
 
 public interface LocalConfig
 {
+    LocalConfig DEFAULT = new LocalConfig() {};
+
     default Duration getProgressLogScheduleDelay()
     {
         return Duration.ofSeconds(1);
+    }
+
+    // How long before we start notifying waiters on an epoch of timeout,
+    default long epochFetchInitialTimeout()
+    {
+        return 10_000;
+    }
+
+    // How often to check for timeout, and once an epoch has timed out, how often we timeout new waiters
+    default long epochFetchWatchdogIntervalMillis()
+    {
+        return 2_000;
     }
 }

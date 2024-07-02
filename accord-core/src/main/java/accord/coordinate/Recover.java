@@ -261,14 +261,17 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
                 case Applied:
                 case PreApplied:
                 {
-                    withCommittedDeps(executeAt, (stableDeps, failure) -> {
-                        if (failure != null)
+                    withCommittedDeps(executeAt, (stableDeps, withEpochFailure) -> {
+                        if (withEpochFailure != null)
                         {
-                            // TODO (review): This case we don't pass a callback to persist, is that intentional?
+                            node.agent().onUncaughtException(new RuntimeException(withEpochFailure));
                             return;
                         }
                         // TODO (future development correctness): when writes/result are partially replicated, need to confirm we have quorum of these
-                        persist(adapter, node, tracker.topologies(), route, txnId, txn, executeAt, stableDeps, acceptOrCommit.writes, acceptOrCommit.result, null);
+                        persist(adapter, node, tracker.topologies(), route, txnId, txn, executeAt, stableDeps, acceptOrCommit.writes, acceptOrCommit.result, (ignored, failure) -> {
+                            if (failure != null)
+                                node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
+                        });
                     });
                     accept(acceptOrCommit.result, null);
                     return;
@@ -276,10 +279,10 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
 
                 case Stable:
                 {
-                    withCommittedDeps(executeAt, (stableDeps, failure) -> {
-                        if (failure != null)
+                    withCommittedDeps(executeAt, (stableDeps, withEpochFailure) -> {
+                        if (withEpochFailure != null)
                         {
-                            this.accept(null, failure);
+                            node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
                             return;
                         }
                         execute(adapter, node, tracker.topologies(), route, RECOVER, txnId, txn, executeAt, stableDeps, this);
@@ -290,10 +293,10 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
                 case PreCommitted:
                 case Committed:
                 {
-                    withCommittedDeps(executeAt, (committedDeps, failure) -> {
-                        if (failure != null)
+                    withCommittedDeps(executeAt, (committedDeps, withEpochFailure) -> {
+                        if (withEpochFailure != null)
                         {
-                            this.accept(null, failure);
+                            node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
                             return;
                         }
                         stabilise(adapter, node, tracker.topologies(), route, ballot, txnId, txn, executeAt, committedDeps, this);
@@ -359,7 +362,7 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
         node.withEpoch(executeAt.epoch(), (ignored, withEpochFailure) -> {
             if (withEpochFailure != null)
             {
-                withDeps.accept(null, withEpochFailure);
+                withDeps.accept(null, CoordinationFailed.wrap(withEpochFailure));
                 return;
             }
             Seekables<?, ?> missing = txn.keys().subtract(merged.sufficientFor);
@@ -393,7 +396,10 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
         node.withEpoch(invalidateUntil.epoch(), (ignored, withEpochFailure) -> {
             // TODO (review): There was already nothing here to handle failures in commitInvalidate
             if (withEpochFailure != null)
+            {
+                node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
                 return;
+            }
             Commit.Invalidate.commitInvalidate(node, txnId, route, invalidateUntil);
         });
         isDone = true;
@@ -402,10 +408,10 @@ public class Recover implements Callback<RecoverReply>, BiConsumer<Result, Throw
 
     private void propose(Timestamp executeAt, Deps deps)
     {
-        node.withEpoch(executeAt.epoch(), (ignored, failure) -> {
-            if (failure != null)
+        node.withEpoch(executeAt.epoch(), (ignored, withEpochFailure) -> {
+            if (withEpochFailure != null)
             {
-                this.accept(null, failure);
+                this.accept(null, CoordinationFailed.wrap(withEpochFailure));
                 return;
             }
             Invoke.propose(adapter, node, route, ballot, txnId, txn, executeAt, deps, this);

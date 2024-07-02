@@ -23,6 +23,8 @@ import javax.annotation.Nullable;
 import accord.api.RoutingKey;
 import accord.primitives.TxnId;
 
+import static accord.utils.Invariants.checkState;
+
 /**
  * Thrown when a transaction exceeds its specified timeout for obtaining a result for a client
  */
@@ -31,5 +33,17 @@ public class Timeout extends CoordinationFailed
     public Timeout(TxnId txnId, @Nullable RoutingKey homeKey)
     {
         super(txnId, homeKey);
+    }
+
+    private Timeout(TxnId txnId, @Nullable RoutingKey homeKey, Timeout cause)
+    {
+        super(txnId, homeKey, cause);
+    }
+
+    @Override
+    public Timeout wrap()
+    {
+        checkState(this.getClass() == Timeout.class);
+        return new Timeout(txnId(), homeKey(), this);
     }
 }

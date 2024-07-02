@@ -61,7 +61,7 @@ public class FetchData extends CheckShards<Route<?>>
             node.withEpoch(srcEpoch, (ignore, withEpochFailure) -> {
                 if (withEpochFailure != null)
                 {
-                    callback.accept(null, withEpochFailure);
+                    callback.accept(null, CoordinationFailed.wrap(withEpochFailure));
                     return;
                 }
                 fetch(fetch, node, txnId, route, forLocalEpoch, executeAt, callback);
@@ -151,7 +151,7 @@ public class FetchData extends CheckShards<Route<?>>
         node.withEpoch(executeAt, (ignore, withEpochFailure) -> {
             if (withEpochFailure != null)
             {
-                callback.accept(null, withEpochFailure);
+                callback.accept(null, CoordinationFailed.wrap(withEpochFailure));
                 return;
             }
             long toEpoch = Math.max(fetch.fetchEpoch(txnId, executeAt), forLocalEpoch == null ? 0 : forLocalEpoch.epoch());

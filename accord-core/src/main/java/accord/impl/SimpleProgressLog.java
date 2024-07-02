@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.ProgressLog;
+import accord.coordinate.CoordinationFailed;
 import accord.coordinate.FetchData;
 import accord.coordinate.Outcome;
 import accord.local.Command;
@@ -257,6 +258,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                                 // At least set progress to expected as would happen if recover had a failure?
                                 if (withEpochFailure != null)
                                 {
+                                    node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
                                     commandStore.execute(contextFor(txnId), safeStore0 -> {
                                         if (status.isAtMostReadyToExecute() && progress() == Investigating)
                                         {
@@ -359,7 +361,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
                     node.withEpoch(blockedUntil.fetchEpoch(txnId, executeAt), (ignored, withEpochFailure) -> {
                         if (withEpochFailure != null)
                         {
-                            callback.accept(null, withEpochFailure);
+                            callback.accept(null, CoordinationFailed.wrap(withEpochFailure));
                             return;
                         }
                         FetchData.fetch(blockedUntil.requires, node, txnId, fetchKeys, forLocalEpoch, executeAt, callback);

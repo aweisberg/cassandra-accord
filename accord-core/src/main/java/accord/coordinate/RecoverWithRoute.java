@@ -214,7 +214,7 @@ public class RecoverWithRoute extends CheckShards<FullRoute<?>>
                     node.withEpoch(full.executeAt.epoch(), (ignored, withEpochFailure) -> {
                         if (withEpochFailure != null)
                         {
-                            // TODO (review): We already ignore persist errors here by not providing a callback to persist
+                            node.agent().onUncaughtException(CoordinationFailed.wrap(withEpochFailure));
                             return;
                         }
                         persist(node.coordinationAdapter(txnId, InitiateRecovery), node, topologies, route(), txnId, txn, full.executeAt, deps, full.writes, full.result, null);

@@ -58,6 +58,7 @@ import accord.coordinate.CoordinateEphemeralRead;
 import accord.coordinate.CoordinateTransaction;
 import accord.coordinate.CoordinationAdapter;
 import accord.coordinate.CoordinationAdapter.Factory.Step;
+import accord.coordinate.CoordinationFailed;
 import accord.coordinate.MaybeRecover;
 import accord.coordinate.Outcome;
 import accord.coordinate.RecoverWithRoute;
@@ -181,7 +182,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         this.localRequestHandler = localRequestHandler;
         this.configService = configService;
         this.coordinationAdapters = coordinationAdapters;
-        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, nowTimeUnit);
+        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, nowTimeUnit, localConfig);
         topology.scheduleTopologyUpdateWatchdog();
         this.nowSupplier = nowSupplier;
         this.nowTimeUnit = nowTimeUnit;
@@ -303,7 +304,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         else
         {
             configService.fetchTopologyForEpoch(epoch);
-            topology.awaitEpoch(epoch).addCallback(callback).begin((ignored1, ignored2) -> {});
+            topology.awaitEpoch(epoch).begin(callback);
         }
     }
 
@@ -727,6 +728,8 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
             configService.fetchTopologyForEpoch(waitForEpoch);
             topology().awaitEpoch(waitForEpoch).addCallback((ignored, failure) -> {
                 if (failure != null)
+                    agent().onUncaughtException(CoordinationFailed.wrap(failure));
+                else
                     receive(request, from, replyContext);
             });
             return;

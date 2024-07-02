@@ -38,6 +38,7 @@ import accord.api.ConfigurationService.EpochReady;
 import accord.api.RoutingKey;
 import accord.api.Scheduler;
 import accord.api.TopologySorter;
+import accord.config.LocalConfig;
 import accord.coordinate.Timeout;
 import accord.coordinate.TopologyMismatch;
 import accord.coordinate.tracking.QuorumTracker;
@@ -83,11 +84,6 @@ public class TopologyManager
         SUCCESS = new FutureEpoch(Long.MAX_VALUE);
         SUCCESS.future.trySuccess(null);
     }
-
-    // How long before we start notifying waiters on an epoch of timeout,
-    private static final long EPOCH_INITIAL_TIMEOUT_MILLIS = 10_000;
-    // How often we check for timeout, and once an epoch has timed out, how often we timeout new waiters
-    private static final long WATCHDOG_INTERVAL_MILLIS = 2_000;
 
     static class EpochState
     {
@@ -255,13 +251,13 @@ public class TopologyManager
             this(epochs, new ArrayList<>(), new ArrayList<>());
         }
 
-        private FutureEpoch awaitEpoch(long epoch, Agent agent, ToLongFunction<TimeUnit> nowTimeUnit)
+        private FutureEpoch awaitEpoch(long epoch, Agent agent, ToLongFunction<TimeUnit> nowTimeUnit, LocalConfig localConfig)
         {
             if (epoch <= currentEpoch)
                 return SUCCESS;
 
             long now = nowTimeUnit.applyAsLong(TimeUnit.MILLISECONDS);
-            long deadline = now + EPOCH_INITIAL_TIMEOUT_MILLIS;
+            long deadline = now + localConfig.epochFetchInitialTimeout();
             int diff = (int) (epoch - currentEpoch);
             while (futureEpochs.size() < diff)
             {
@@ -415,7 +411,7 @@ public class TopologyManager
          * instead of EPOCH_INITIAL_TIMEOUT_MILLIS
          */
         @GuardedBy("TopologyManager.this")
-        public void timeOutCurrentListeners(long newDeadline, Agent agent)
+        private void timeOutCurrentListeners(long newDeadline, Agent agent)
         {
             deadlineMillis = newDeadline;
             AsyncResult.Settable<Void> oldFuture = future;
@@ -435,7 +431,9 @@ public class TopologyManager
     private volatile Epochs epochs;
     private Scheduler.Scheduled topologyUpdateWatchdog;
 
-    public TopologyManager(TopologySorter.Supplier sorter, Agent agent, Id node, Scheduler scheduler, ToLongFunction<TimeUnit> nowTimeUnit)
+    private final LocalConfig localConfig;
+
+    public TopologyManager(TopologySorter.Supplier sorter, Agent agent, Id node, Scheduler scheduler, ToLongFunction<TimeUnit> nowTimeUnit, LocalConfig localConfig)
     {
         this.sorter = sorter;
         this.agent = agent;
@@ -443,6 +441,7 @@ public class TopologyManager
         this.scheduler = scheduler;
         this.nowTimeUnit = nowTimeUnit;
         this.epochs = Epochs.EMPTY;
+        this.localConfig = localConfig;
     }
 
     public void shutdown()
@@ -468,11 +467,11 @@ public class TopologyManager
                         if (now <= futureEpoch.deadlineMillis)
                             break;
                         else
-                            futureEpoch.timeOutCurrentListeners(now + EPOCH_INITIAL_TIMEOUT_MILLIS, agent);
+                            futureEpoch.timeOutCurrentListeners(now + localConfig.epochFetchInitialTimeout(), agent);
                     }
                 }
             }
-        }, WATCHDOG_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+        }, localConfig.epochFetchWatchdogIntervalMillis(), TimeUnit.MILLISECONDS);
     }
 
     public synchronized EpochReady onTopologyUpdate(Topology topology, Supplier<EpochReady> bootstrap)
@@ -513,7 +512,7 @@ public class TopologyManager
         AsyncResult<Void> result = null;
         synchronized (this)
         {
-            result = epochs.awaitEpoch(epoch, agent, nowTimeUnit).future;
+            result = epochs.awaitEpoch(epoch, agent, nowTimeUnit, localConfig).future;
         }
         CommandStore current = CommandStore.maybeCurrent();
         return current == null || result.isDone() ? result : result.withExecutor(current);

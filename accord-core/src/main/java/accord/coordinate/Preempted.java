@@ -23,6 +23,8 @@ import javax.annotation.Nullable;
 import accord.api.RoutingKey;
 import accord.primitives.TxnId;
 
+import static accord.utils.Invariants.checkState;
+
 /**
  * Thrown when a coordinator is preempted by another recovery
  * coordinator intending to complete the transaction
@@ -32,5 +34,17 @@ public class Preempted extends CoordinationFailed
     public Preempted(TxnId txnId, @Nullable RoutingKey homeKey)
     {
         super(txnId, homeKey);
+    }
+
+    private Preempted(TxnId txnId, @Nullable RoutingKey homeKey, Preempted cause)
+    {
+        super(txnId, homeKey, cause);
+    }
+
+    @Override
+    public Preempted wrap()
+    {
+        checkState(this.getClass() == Preempted.class);
+        return new Preempted(txnId(), homeKey(), this);
     }
 }

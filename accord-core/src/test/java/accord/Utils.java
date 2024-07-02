@@ -18,6 +18,15 @@
 
 package accord;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+import com.google.common.collect.Sets;
+
 import accord.api.Key;
 import accord.api.MessageSink;
 import accord.api.Scheduler;
@@ -53,16 +62,8 @@ import accord.utils.DefaultRandom;
 import accord.utils.EpochFunction;
 import accord.utils.Invariants;
 import accord.utils.ThreadPoolScheduler;
-import com.google.common.collect.Sets;
 import org.awaitility.Awaitility;
 import org.awaitility.core.ThrowingRunnable;
-
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 import static accord.utils.async.AsyncChains.awaitUninterruptibly;
 
@@ -199,6 +200,6 @@ public class Utils
 
     public static TopologyManager testTopologyManager(TopologySorter.Supplier sorter, Id node)
     {
-        return new TopologyManager(sorter, new TestAgent.RethrowAgent(), node, Scheduler.NEVER_RUN_SCHEDULED, NodeTimeService.unixWrapper(TimeUnit.MILLISECONDS, () -> 0));
+        return new TopologyManager(sorter, new TestAgent.RethrowAgent(), node, Scheduler.NEVER_RUN_SCHEDULED, NodeTimeService.unixWrapper(TimeUnit.MILLISECONDS, () -> 0), LocalConfig.DEFAULT);
     }
 }
