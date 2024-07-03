@@ -19,6 +19,7 @@
 package accord.config;
 
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 
 public interface LocalConfig
 {
@@ -30,14 +31,14 @@ public interface LocalConfig
     }
 
     // How long before we start notifying waiters on an epoch of timeout,
-    default long epochFetchInitialTimeout()
+    default Duration epochFetchInitialTimeout()
     {
-        return 10_000;
+        return Duration.of(10, ChronoUnit.SECONDS);
     }
 
     // How often to check for timeout, and once an epoch has timed out, how often we timeout new waiters
-    default long epochFetchWatchdogIntervalMillis()
+    default Duration epochFetchWatchdogInterval()
     {
-        return 2_000;
+        return Duration.of(10, ChronoUnit.SECONDS);
     }
 }

@@ -257,7 +257,7 @@ public class TopologyManager
                 return SUCCESS;
 
             long now = nowTimeUnit.applyAsLong(TimeUnit.MILLISECONDS);
-            long deadline = now + localConfig.epochFetchInitialTimeout();
+            long deadline = now + localConfig.epochFetchInitialTimeout().toMillis();
             int diff = (int) (epoch - currentEpoch);
             while (futureEpochs.size() < diff)
             {
@@ -467,11 +467,11 @@ public class TopologyManager
                         if (now <= futureEpoch.deadlineMillis)
                             break;
                         else
-                            futureEpoch.timeOutCurrentListeners(now + localConfig.epochFetchInitialTimeout(), agent);
+                            futureEpoch.timeOutCurrentListeners(now + localConfig.epochFetchInitialTimeout().toMillis(), agent);
                     }
                 }
             }
-        }, localConfig.epochFetchWatchdogIntervalMillis(), TimeUnit.MILLISECONDS);
+        }, localConfig.epochFetchWatchdogInterval().toMillis(), TimeUnit.MILLISECONDS);
     }
 
     public synchronized EpochReady onTopologyUpdate(Topology topology, Supplier<EpochReady> bootstrap)

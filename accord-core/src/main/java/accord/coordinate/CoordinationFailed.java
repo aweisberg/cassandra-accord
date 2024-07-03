@@ -23,15 +23,14 @@ import javax.annotation.Nullable;
 import accord.api.RoutingKey;
 import accord.primitives.TxnId;
 
-import static accord.utils.Invariants.checkState;
-
 /**
  * Thrown when a transaction exceeds its specified timeout for obtaining a result for a client
  */
-public class CoordinationFailed extends RuntimeException
+public abstract class CoordinationFailed extends RuntimeException
 {
     private @Nullable TxnId txnId;
     private @Nullable RoutingKey homeKey;
+
     public CoordinationFailed(@Nullable TxnId txnId, @Nullable RoutingKey homeKey)
     {
         this.txnId = txnId;
@@ -74,22 +73,36 @@ public class CoordinationFailed extends RuntimeException
     /**
      * Wrap the exception without changing the type so asynchronous callbacks can add their own stack
      */
-    public CoordinationFailed wrap()
-    {
-        checkState(this.getClass() == CoordinationFailed.class);
-        return new CoordinationFailed(txnId, homeKey, this);
-    }
+    public abstract CoordinationFailed wrap();
 
     public static Throwable wrap(Throwable t)
     {
         if (t instanceof CoordinationFailed)
         {
             CoordinationFailed wrapped = ((CoordinationFailed)t).wrap();
-            checkState(wrapped.getClass() == t.getClass(), "Wrapping should not change type");
+            if (wrapped.getClass() != t.getClass())
+            {
+                IllegalStateException ise = new IllegalStateException("Wrapping should not change type");
+                ise.addSuppressed(t);
+                throw ise;
+            }
+            return wrapped;
+        }
+        else if (t instanceof AssertionError)
+        {
+            return new AssertionError(t);
+        }
+        else if (t instanceof OutOfMemoryError)
+        {
+            return t;
+        }
+        else if (t instanceof Error)
+        {
+            return new Error(t);
         }
         else
         {
-            throw new RuntimeException(t);
+            return new RuntimeException(t);
         }
     }
 }
