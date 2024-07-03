@@ -67,8 +67,8 @@ import accord.impl.TopologyFactory;
 import accord.impl.list.ListAgent;
 import accord.impl.list.ListStore;
 import accord.local.AgentExecutor;
-import accord.local.Node.Id;
 import accord.local.Node;
+import accord.local.Node.Id;
 import accord.local.NodeTimeService;
 import accord.local.ShardDistributor;
 import accord.messages.Message;
@@ -395,7 +395,7 @@ public class Cluster implements Scheduler
                 journalMap.put(id, journal);
                 BurnTestConfigurationService configService = new BurnTestConfigurationService(id, nodeExecutor, randomSupplier, topology, nodeMap::get, topologyUpdates);
                 BooleanSupplier isLoadedCheck = Gens.supplier(Gens.bools().mixedDistribution().next(random), random);
-                Node node = new Node(id, messageSink, journal, configService, nowSupplier, NodeTimeService.unixWrapper(TimeUnit.MILLISECONDS, nowSupplier),
+                Node node = new Node(id, messageSink, journal, configService, nowSupplier, NodeTimeService.elapsedWrapperFromNonMonotonicSource(TimeUnit.MILLISECONDS, nowSupplier),
                                      () -> new ListStore(id), new ShardDistributor.EvenSplit<>(8, ignore -> new PrefixedIntHashKey.Splitter()),
                                      nodeExecutor.agent(),
                                      randomSupplier.get(), sinks, SizeOfIntersectionSorter.SUPPLIER,

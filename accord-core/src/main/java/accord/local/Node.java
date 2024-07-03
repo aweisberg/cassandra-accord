@@ -158,7 +158,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     private final CoordinationAdapter.Factory coordinationAdapters;
 
     private final LongSupplier nowSupplier;
-    private final ToLongFunction<TimeUnit> nowTimeUnit;
+    private final ToLongFunction<TimeUnit> elapsed;
     private final AtomicReference<Timestamp> now;
     private final Agent agent;
     private final RandomSource random;
@@ -171,7 +171,7 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     private final Map<TxnId, AsyncResult<? extends Outcome>> coordinating = new ConcurrentHashMap<>();
 
     public Node(Id id, MessageSink messageSink, LocalRequest.Handler localRequestHandler,
-                ConfigurationService configService, LongSupplier nowSupplier, ToLongFunction<TimeUnit> nowTimeUnit,
+                ConfigurationService configService, LongSupplier nowSupplier, ToLongFunction<TimeUnit> elapsed,
                 Supplier<DataStore> dataSupplier, ShardDistributor shardDistributor, Agent agent, RandomSource random, Scheduler scheduler, TopologySorter.Supplier topologySorter,
                 Function<Node, ProgressLog.Factory> progressLogFactory, CommandStores.Factory factory, CoordinationAdapter.Factory coordinationAdapters,
                 LocalConfig localConfig)
@@ -182,10 +182,10 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
         this.localRequestHandler = localRequestHandler;
         this.configService = configService;
         this.coordinationAdapters = coordinationAdapters;
-        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, nowTimeUnit, localConfig);
+        this.topology = new TopologyManager(topologySorter, agent, id, scheduler, elapsed, localConfig);
         topology.scheduleTopologyUpdateWatchdog();
         this.nowSupplier = nowSupplier;
-        this.nowTimeUnit = nowTimeUnit;
+        this.elapsed = elapsed;
         this.now = new AtomicReference<>(Timestamp.fromValues(topology.epoch(), nowSupplier.getAsLong(), id));
         this.agent = agent;
         this.random = random;
@@ -361,9 +361,9 @@ public class Node implements ConfigurationService.Listener, NodeTimeService
     }
 
     @Override
-    public long unix(TimeUnit timeUnit)
+    public long elapsed(TimeUnit timeUnit)
     {
-        return nowTimeUnit.applyAsLong(timeUnit);
+        return elapsed.applyAsLong(timeUnit);
     }
 
     private static Timestamp nowAtLeast(Timestamp current, Timestamp proposed)

@@ -169,7 +169,7 @@ public class Utils
                              LocalRequest::simpleHandler,
                              new MockConfigurationService(messageSink, EpochFunction.noop(), topology),
                              clock,
-                             NodeTimeService.unixWrapper(TimeUnit.MICROSECONDS, clock),
+                             NodeTimeService.elapsedWrapperFromNonMonotonicSource(TimeUnit.MICROSECONDS, clock),
                              () -> store,
                              new ShardDistributor.EvenSplit(8, ignore -> new IntKey.Splitter()),
                              new TestAgent(),
@@ -200,6 +200,6 @@ public class Utils
 
     public static TopologyManager testTopologyManager(TopologySorter.Supplier sorter, Id node)
     {
-        return new TopologyManager(sorter, new TestAgent.RethrowAgent(), node, Scheduler.NEVER_RUN_SCHEDULED, NodeTimeService.unixWrapper(TimeUnit.MILLISECONDS, () -> 0), LocalConfig.DEFAULT);
+        return new TopologyManager(sorter, new TestAgent.RethrowAgent(), node, Scheduler.NEVER_RUN_SCHEDULED, NodeTimeService.elapsedWrapperFromNonMonotonicSource(TimeUnit.MILLISECONDS, () -> 0), LocalConfig.DEFAULT);
     }
 }
