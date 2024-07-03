@@ -83,8 +83,13 @@ public class CoordinationFailed extends RuntimeException
     public static Throwable wrap(Throwable t)
     {
         if (t instanceof CoordinationFailed)
-            return ((CoordinationFailed)t).wrap();
+        {
+            CoordinationFailed wrapped = ((CoordinationFailed)t).wrap();
+            checkState(wrapped.getClass() == t.getClass(), "Wrapping should not change type");
+        }
         else
+        {
             throw new RuntimeException(t);
+        }
     }
 }
