@@ -691,10 +691,7 @@ public class SimpleProgressLog implements ProgressLog.Factory
             try
             {
                 if (PAUSE_FOR_TEST)
-                {
-                    logger.info("Skipping progress log because it is paused for test");
                     return;
-                }
 
                 for (State.Monitoring run : this)
                 {
