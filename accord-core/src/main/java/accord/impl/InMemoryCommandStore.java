@@ -364,10 +364,12 @@ public abstract class InMemoryCommandStore extends CommandStore
     }
 
     @Override
-    public void markShardDurable(SafeCommandStore safeStore, TxnId syncId, Ranges ranges)
+    public AsyncChain<Void> markShardDurable(SafeCommandStore safeStore, TxnId syncId, Ranges ranges)
     {
-        super.markShardDurable(safeStore, syncId, ranges);
+        // We know it completes immediately for InMemoryCommandStore
+        AsyncChain<Void> markShardDurableChain = super.markShardDurable(safeStore, syncId, ranges);
         markShardDurable(syncId, ranges);
+        return markShardDurableChain;
     }
 
     private void markShardDurable(TxnId syncId, Ranges ranges)
@@ -482,7 +484,8 @@ public abstract class InMemoryCommandStore extends CommandStore
     {
         if (current != null)
             throw illegalState("Another operation is in progress or it's store was not cleared");
-        current = createSafeStore(context, updateRangesForEpoch());
+        RangesForEpoch rangesForEpoch = updateRangesForEpoch();
+        current = createSafeStore(context, rangesForEpoch);
         return current;
     }
 
