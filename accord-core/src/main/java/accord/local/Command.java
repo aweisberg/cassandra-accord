@@ -1020,6 +1020,8 @@ public abstract class Command implements CommonAttributes
         {
             super(common, status, promised, executeAt, accepted);
             this.waitingOn = waitingOn;
+            Invariants.nonNull(common.participants());
+            Invariants.nonNull(common.route());
             Invariants.checkState(common.route().kind().isFullRoute(), "Expected a full route but given %s", common.route().kind());
         }
 

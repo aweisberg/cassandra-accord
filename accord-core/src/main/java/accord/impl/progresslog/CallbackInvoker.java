@@ -21,6 +21,7 @@ package accord.impl.progresslog;
 import java.util.function.BiConsumer;
 
 import accord.local.SafeCommand;
+import accord.primitives.Status;
 import accord.primitives.TxnId;
 import accord.utils.Invariants;
 
