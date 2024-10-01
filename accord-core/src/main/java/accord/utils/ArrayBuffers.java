@@ -807,7 +807,7 @@ public class ArrayBuffers
         public boolean add(E e)
         {
             if (size == buffer.length)
-                buffer = cachedAny().resize(buffer, size, Math.min(8, size * 2));
+                buffer = cachedAny().resize(buffer, size, Math.max(8, size * 2));
             buffer[size++] = e;
             return true;
         }
