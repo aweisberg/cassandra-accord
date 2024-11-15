@@ -64,6 +64,9 @@ import static accord.local.Command.Truncated.truncatedApplyWithOutcome;
 import static accord.local.KeyHistory.TIMESTAMPS;
 import static accord.local.PreLoadContext.contextFor;
 import static accord.local.RedundantStatus.PRE_BOOTSTRAP_OR_STALE;
+import static accord.primitives.Known.KnownExecuteAt.ExecuteAtKnown;
+import static accord.primitives.Known.KnownRoute.Full;
+import static accord.primitives.Route.isFullRoute;
 import static accord.primitives.SaveStatus.Applying;
 import static accord.primitives.SaveStatus.Erased;
 import static accord.primitives.SaveStatus.TruncatedApply;
@@ -71,14 +74,11 @@ import static accord.primitives.Status.Applied;
 import static accord.primitives.Status.Committed;
 import static accord.primitives.Status.Durability;
 import static accord.primitives.Status.Invalidated;
-import static accord.primitives.Known.KnownExecuteAt.ExecuteAtKnown;
-import static accord.primitives.Known.KnownRoute.Full;
 import static accord.primitives.Status.NotDefined;
 import static accord.primitives.Status.PreApplied;
 import static accord.primitives.Status.PreCommitted;
 import static accord.primitives.Status.Stable;
 import static accord.primitives.Status.Truncated;
-import static accord.primitives.Route.isFullRoute;
 import static accord.primitives.Txn.Kind.EphemeralRead;
 import static accord.primitives.Txn.Kind.Read;
 import static accord.utils.Invariants.illegalState;
@@ -500,15 +500,17 @@ public class Commands
 
     public static AsyncChain<Void> applyChain(SafeCommandStore safeStore, PreLoadContext context, TxnId txnId)
     {
-        Command.Executed command = safeStore.get(txnId).current().asExecuted();
-        if (command.hasBeen(Applied))
-            return AsyncChains.success(null);
-        return apply(safeStore, context, txnId);
+        return applyChain(safeStore, safeStore.get(txnId), context, txnId);
     }
 
-    public static AsyncChain<Void> apply(SafeCommandStore safeStore, PreLoadContext context, TxnId txnId)
+    public static AsyncChain<Void> applyChain(SafeCommandStore safeStore, SafeCommand safeCommand, PreLoadContext context, TxnId txnId)
     {
-        Command.Executed command = safeStore.get(txnId).current().asExecuted();
+        if (safeCommand.current().saveStatus().compareTo(Applying) >= 0)
+            return AsyncChains.success(null);
+        Command.Executed command = safeCommand.applying(safeStore);
+        safeStore.notifyListeners(safeCommand, command);
+        logger.trace("{}: applying", command.txnId());
+
         // TODO (required): make sure we are correctly handling (esp. C* side with validation logic) executing a transaction
         //  that was pre-bootstrap for some range (so redundant and we may have gone ahead of), but had to be executed locally
         //  for another range
@@ -543,16 +545,15 @@ public class Commands
             return AsyncChains.success(null);
     }
 
-    private static void apply(SafeCommandStore safeStore, Command.Executed command, Participants<?> executes)
+    private static void apply(SafeCommandStore safeStore, SafeCommand safeCommand, TxnId txnId, Participants<?> executes)
     {
         CommandStore unsafeStore = safeStore.commandStore();
-        TxnId txnId = command.txnId();
         // TODO (expected): there is some coupling going on here - concept of TIMESTAMPS only needed if implementation tracks on apply
-        PreLoadContext context = contextFor(command.txnId(), executes, TIMESTAMPS);
+        PreLoadContext context = contextFor(txnId, executes, TIMESTAMPS);
         // this is sometimes called from a listener update, which will not have the keys in context
         if (safeStore.canExecuteWith(context))
         {
-            applyChain(safeStore, context, txnId).begin(safeStore.agent());
+            applyChain(safeStore, safeCommand, context, txnId).begin(safeStore.agent());
         }
         else
         {
@@ -570,6 +571,9 @@ public class Commands
 
     public static boolean maybeExecute(SafeCommandStore safeStore, SafeCommand safeCommand, Command command, boolean alwaysNotifyListeners, boolean notifyWaitingOn)
     {
+        if (command.saveStatus().compareTo(Applying) >= 0)
+            return false;
+
         if (logger.isTraceEnabled())
             logger.trace("{}: Maybe executing with status {}. Will notify listeners on noop: {}", command.txnId(), command.status(), alwaysNotifyListeners);
 
@@ -619,10 +623,7 @@ public class Commands
                 }
                 else
                 {
-                    safeCommand.applying(safeStore);
-                    safeStore.notifyListeners(safeCommand, command);
-                    logger.trace("{}: applying", command.txnId());
-                    apply(safeStore, executed, executes);
+                    apply(safeStore, safeCommand, txnId, executes);
                 }
                 return true;
             default:
