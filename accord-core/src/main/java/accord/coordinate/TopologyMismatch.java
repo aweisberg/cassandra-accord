@@ -37,7 +37,7 @@ public class TopologyMismatch extends CoordinationFailed
 
     private TopologyMismatch(EnumSet<Reason> reasons, Topology topology, @Nullable TxnId txnId, @Nullable RoutingKey homeKey, Routables<?> keysOrRanges)
     {
-        super(txnId, homeKey, buildMessage(reasons, topology, homeKey, keysOrRanges));
+        super(txnId, homeKey, buildMessage(txnId, reasons, topology, homeKey, keysOrRanges));
         this.reasons = reasons;
     }
 
@@ -60,11 +60,11 @@ public class TopologyMismatch extends CoordinationFailed
         return new TopologyMismatch(reasons, txnId(), homeKey(), this);
     }
 
-    private static String buildMessage(EnumSet<Reason> reason, Topology topology, RoutingKey homeKey, Routables<?> keysOrRanges)
+    private static String buildMessage(@Nullable TxnId txnId, EnumSet<Reason> reason, Topology topology, RoutingKey homeKey, Routables<?> keysOrRanges)
     {
         StringBuilder sb = new StringBuilder();
         if (reason.contains(Reason.KEYS_OR_RANGES))
-            sb.append(String.format("Txn attempted to access keys or ranges %s that are no longer valid globally (%d -> %s)", keysOrRanges, topology.epoch(), topology.ranges()));
+            sb.append(String.format("Txn (%s) attempted to access keys or ranges %s that are no longer valid globally (%d -> %s)", txnId, keysOrRanges, topology.epoch(), topology.ranges()));
         if (reason.contains(Reason.HOME_KEY))
         {
             if (sb.length() != 0)

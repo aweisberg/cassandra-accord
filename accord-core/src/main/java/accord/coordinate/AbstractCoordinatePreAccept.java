@@ -35,8 +35,8 @@ import accord.topology.Topologies;
 import accord.utils.Invariants;
 import accord.utils.async.AsyncResults.SettableResult;
 
-import static accord.api.ProtocolModifiers.QuorumEpochIntersections.ChaseFixedPoint.DoNotChase;
 import static accord.api.ProtocolModifiers.QuorumEpochIntersections;
+import static accord.api.ProtocolModifiers.QuorumEpochIntersections.ChaseFixedPoint.DoNotChase;
 import static accord.coordinate.tracking.RequestStatus.Failed;
 import static accord.coordinate.tracking.RequestStatus.Success;
 
@@ -207,7 +207,7 @@ abstract class AbstractCoordinatePreAccept<T, R> extends SettableResult<T> imple
         if (QuorumEpochIntersections.preaccept.chase == DoNotChase)
         {
             long latestEpoch = executeAtEpoch();
-            if (latestEpoch > topologies.currentEpoch()) node.withEpoch(latestEpoch, node.agent(), () -> onPreAcceptedInNewEpoch(topologies, latestEpoch));
+            if (latestEpoch > topologies.currentEpoch()) node.withEpoch(latestEpoch, (ignored, failure) -> tryFailure(failure), () -> onPreAcceptedInNewEpoch(topologies, latestEpoch));
             else onPreAccepted(topologies);
             return;
         }
