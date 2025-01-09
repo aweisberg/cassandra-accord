@@ -19,6 +19,8 @@
 package accord.coordinate;
 
 import java.util.function.BiFunction;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -28,16 +30,16 @@ import accord.api.BarrierType;
 import accord.api.LocalListeners;
 import accord.api.RoutingKey;
 import accord.local.Command;
-import accord.local.KeyHistory;
 import accord.local.CommandSummaries;
+import accord.local.KeyHistory;
 import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
-import accord.primitives.Seekables;
-import accord.primitives.Status;
 import accord.primitives.FullRoute;
 import accord.primitives.Routable.Domain;
 import accord.primitives.RoutableKey;
+import accord.primitives.Seekables;
+import accord.primitives.Status;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
@@ -48,14 +50,12 @@ import accord.utils.MapReduceConsume;
 import accord.utils.TriFunction;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
-import static accord.local.PreLoadContext.contextFor;
+import static accord.local.CommandSummaries.ComputeIsDep.IGNORE;
 import static accord.local.CommandSummaries.SummaryStatus.COMMITTED;
 import static accord.local.CommandSummaries.SummaryStatus.INVALIDATED;
-import static accord.local.CommandSummaries.ComputeIsDep.IGNORE;
 import static accord.local.CommandSummaries.TestStartedAt.STARTED_AFTER;
+import static accord.local.PreLoadContext.contextFor;
 import static accord.primitives.Txn.Kind.AnyGloballyVisible;
 import static accord.primitives.TxnId.Cardinality.cardinality;
 import static accord.utils.Invariants.illegalState;
@@ -201,8 +201,21 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
                 return;
             }
 
-            if (!barrierType.async)
+            if (barrierType.async)
+            {
+                // Counter intuitive but async needs to wait on local application
+                TxnId txnId = syncPoint.syncId;
+                long epoch = txnId.epoch();
+                RoutingKey homeKey = syncPoint.route.homeKey();
+                node.commandStores().ifLocal(contextFor(txnId), homeKey, epoch, epoch,
+                                             safeStore -> register(safeStore, txnId, homeKey))
+                    .begin(node.agent());
+            }
+            else
+            {
+                // Sync is waiting on global application at quorum/required nodes which should already have occurred
                 Barrier.this.trySuccess(syncPoint.syncId);
+            }
         });
     }
 
