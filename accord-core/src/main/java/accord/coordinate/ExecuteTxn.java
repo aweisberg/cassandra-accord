@@ -236,8 +236,9 @@ public class ExecuteTxn extends ReadCoordinator<ReadReply> implements Timeouts.T
                 executeAt = new TimestampWithUniqueHlc(executeAt, uniqueHlc);
             }
 
-            Writes writes = txnId.is(Txn.Kind.Write) ? txn.execute(txnId, executeAt, data) : null;
+            // Always compute Result before Write
             Result result = txn.result(txnId, executeAt, data);
+            Writes writes = txnId.is(Txn.Kind.Write) ? txn.execute(txnId, executeAt, data) : null;
             adapter().persist(node, allTopologies, route, txnId, txn, executeAt, stableDeps, writes, result, callback);
         }
         else

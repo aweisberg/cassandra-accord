@@ -685,6 +685,12 @@ public class Node implements ConfigurationService.Listener, NodeCommandStoreServ
         return nextTxnId(rw, domain, cardinality, defaultMediumPath().bit());
     }
 
+    public TxnId nextTxnId(Txn.Kind rw, Domain domain, Cardinality cardinality, long minHlc)
+    {
+        Timestamp minTimestamp = Timestamp.fromValues(topology.epoch(), minHlc, 0, id());
+        return nextTxnId(minTimestamp, rw, domain, cardinality, defaultMediumPath().bit());
+    }
+
     public TxnId nextTxnId(Timestamp min, Txn.Kind rw, Domain domain, Cardinality cardinality)
     {
         return nextTxnId(min, rw, domain, cardinality, defaultMediumPath().bit());
@@ -890,6 +896,13 @@ public class Node implements ConfigurationService.Listener, NodeCommandStoreServ
     public <R> CoordinationAdapter<R> coordinationAdapter(TxnId txnId, Kind kind)
     {
         return coordinationAdapters.get(txnId, kind);
+    }
+
+    public void updateMinHlc(long minHlc)
+    {
+        commandStores().forEach(safeStore -> {
+            safeStore.commandStore().updateMinHlc(minHlc);
+        });
     }
 
     public Scheduler scheduler()
