@@ -34,9 +34,9 @@ import accord.api.BarrierType;
 import accord.api.LocalListeners;
 import accord.api.Result;
 import accord.api.RoutingKey;
-import accord.impl.progresslog.DefaultProgressLogs;
 import accord.impl.mock.MockCluster;
 import accord.impl.mock.MockStore;
+import accord.impl.progresslog.DefaultProgressLogs;
 import accord.local.Command;
 import accord.local.Commands;
 import accord.local.Commands.AcceptOutcome;
@@ -46,7 +46,6 @@ import accord.local.Node.Id;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
-import accord.primitives.SaveStatus;
 import accord.local.StoreParticipants;
 import accord.messages.ReadData.ReadOk;
 import accord.primitives.Ballot;
@@ -57,6 +56,7 @@ import accord.primitives.Keys;
 import accord.primitives.PartialDeps;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
+import accord.primitives.SaveStatus;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
@@ -73,11 +73,12 @@ import static accord.Utils.writeTxn;
 import static accord.impl.IntKey.key;
 import static accord.impl.IntKey.keys;
 import static accord.impl.IntKey.range;
-import static accord.primitives.Status.Applied;
 import static accord.primitives.Routable.Domain.Key;
 import static accord.primitives.Routable.Domain.Range;
+import static accord.primitives.Status.Applied;
 import static accord.primitives.Txn.Kind.Read;
 import static accord.primitives.Txn.Kind.Write;
+import static accord.utils.async.AsyncChains.getBlocking;
 import static accord.utils.async.AsyncChains.getUninterruptibly;
 import static com.google.common.base.Predicates.alwaysTrue;
 import static java.lang.Thread.sleep;
@@ -177,7 +178,7 @@ public class CoordinateTransactionTest
             // This is checking for a local barrier so it should succeed even if we drop the completion messages from the other nodes
             cluster.networkFilter.addFilter(id -> ImmutableSet.of(cluster.get(2).id(), cluster.get(3).id()).contains(id), alwaysTrue(), message -> message instanceof ReadOk);
             // Should create a sync transaction since no pre-existing one can be used and return as soon as it is locally applied
-            Barrier localInitiatingBarrier = Barrier.barrier(node, Keys.of(key(3)), toRoute(Keys.of(key(3))), node.epoch(), BarrierType.local);
+            Barrier localInitiatingBarrier = getBlocking(Barrier.barrier(node, Keys.of(key(3)), node.epoch(), BarrierType.local), 10, TimeUnit.SECONDS);
             // Sync transaction won't be created until callbacks for existing transaction check runs
             Semaphore existingTransactionCheckCompleted = new Semaphore(0);
             localInitiatingBarrier.existingTransactionCheck.addCallback((ignored1, ignored2) -> existingTransactionCheckCompleted.release());
@@ -204,17 +205,17 @@ public class CoordinateTransactionTest
             Keys globalSyncBarrierKeys = keys(2, 3);
             // At least one other should have completed by the time it is locally applied, a down node should be fine since it is quorum
             cluster.networkFilter.isolate(cluster.get(2).id());
-            Barrier globalInitiatingBarrier = Barrier.barrier(node, globalSyncBarrierKeys, toRoute(globalSyncBarrierKeys), node.epoch(), BarrierType.global_sync);
-            Timestamp globalBarrierTimestamp = getUninterruptibly(globalInitiatingBarrier);
+            Barrier globalInitiatingBarrier = getBlocking(Barrier.barrier(node, globalSyncBarrierKeys, node.epoch(), BarrierType.global_sync), 10, TimeUnit.SECONDS);
+            Timestamp globalBarrierTimestamp = getUninterruptibly(globalInitiatingBarrier).txnId;
 
             assertNotNull(globalInitiatingBarrier.coordinateSyncPoint);
             cluster.networkFilter.clear();
 
             // The existing barrier should suffice here
-            Barrier nonInitiatingLocalBarrier = Barrier.barrier(node, Keys.of(key(2)), toRoute(Keys.of(key(2))), node.epoch(), BarrierType.local);
-            Timestamp previousBarrierTimestamp = getUninterruptibly(nonInitiatingLocalBarrier);
+            Barrier nonInitiatingLocalBarrier = getBlocking(Barrier.barrier(node, Keys.of(key(2)), node.epoch(), BarrierType.local), 10, TimeUnit.SECONDS);
+            Timestamp previousBarrierTimestamp = getUninterruptibly(nonInitiatingLocalBarrier).txnId;
             assertNull(nonInitiatingLocalBarrier.coordinateSyncPoint);
-            assertEquals(previousBarrierTimestamp, getUninterruptibly(nonInitiatingLocalBarrier));
+            assertEquals(previousBarrierTimestamp, getUninterruptibly(nonInitiatingLocalBarrier).txnId);
             assertEquals(previousBarrierTimestamp, globalBarrierTimestamp);
 
             // Sync over nothing should work
@@ -281,7 +282,7 @@ public class CoordinateTransactionTest
                     Commands.apply(safeStore, safeCommand, participants, txnId, route, txnId, partialDeps, command.partialTxn(), txn.execute(txnId, txnId, null), txn.query().compute(txnId, txnId, keys, null, null, null));
                 }));
 
-            Barrier listeningLocalBarrier = Barrier.barrier(node, keys, toRoute(keys), node.epoch(), BarrierType.local);
+            Barrier listeningLocalBarrier = getBlocking(Barrier.barrier(node, keys, node.epoch(), BarrierType.local), 10, TimeUnit.SECONDS);
             // Wait and make sure the existing transaction check worked and there is no coordinate sync point created
             Thread.sleep(500);
             assertNull(listeningLocalBarrier.coordinateSyncPoint);
@@ -301,8 +302,8 @@ public class CoordinateTransactionTest
             // Command listener for local sync transaction should get notified
             assertTrue(localSyncOccurred.tryAcquire(5, TimeUnit.SECONDS));
             // Listening local barrier should have succeeded in waiting on the local transaction that just applied
-            assertEquals(getUninterruptibly(listeningLocalBarrier), getUninterruptibly(listeningLocalBarrier.existingTransactionCheck).executeAt);
-            assertEquals(txnId, getUninterruptibly(listeningLocalBarrier));
+            assertEquals(getUninterruptibly(listeningLocalBarrier).txnId, getUninterruptibly(listeningLocalBarrier.existingTransactionCheck).executeAt);
+            assertEquals(txnId, getUninterruptibly(listeningLocalBarrier).txnId);
         }
         finally
         {
@@ -411,10 +412,5 @@ public class CoordinateTransactionTest
             listener.accept(safeStore, command);
             return true;
         };
-    }
-
-    private static FullRoute<RoutingKey> toRoute(Keys keys)
-    {
-        return keys.toRoute(keys.get(0).toUnseekable());
     }
 }

@@ -18,7 +18,11 @@
 
 package accord.coordinate;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
@@ -27,17 +31,18 @@ import org.slf4j.LoggerFactory;
 import accord.api.BarrierType;
 import accord.api.LocalListeners;
 import accord.api.RoutingKey;
+import accord.coordinate.Barrier.BarrierResult;
 import accord.local.Command;
-import accord.local.KeyHistory;
 import accord.local.CommandSummaries;
+import accord.local.KeyHistory;
 import accord.local.Node;
 import accord.local.SafeCommand;
 import accord.local.SafeCommandStore;
+import accord.primitives.FullRoute;
+import accord.primitives.Ranges;
+import accord.primitives.Routable.Domain;
 import accord.primitives.Seekables;
 import accord.primitives.Status;
-import accord.primitives.FullRoute;
-import accord.primitives.Routable.Domain;
-import accord.primitives.RoutableKey;
 import accord.primitives.SyncPoint;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
@@ -48,17 +53,16 @@ import accord.utils.MapReduceConsume;
 import accord.utils.TriFunction;
 import accord.utils.async.AsyncResult;
 import accord.utils.async.AsyncResults;
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
-import static accord.local.PreLoadContext.contextFor;
+import static accord.local.CommandSummaries.ComputeIsDep.IGNORE;
 import static accord.local.CommandSummaries.SummaryStatus.COMMITTED;
 import static accord.local.CommandSummaries.SummaryStatus.INVALIDATED;
-import static accord.local.CommandSummaries.ComputeIsDep.IGNORE;
 import static accord.local.CommandSummaries.TestStartedAt.STARTED_AFTER;
+import static accord.local.PreLoadContext.contextFor;
 import static accord.primitives.Txn.Kind.AnyGloballyVisible;
 import static accord.primitives.TxnId.Cardinality.cardinality;
 import static accord.utils.Invariants.illegalState;
+import static accord.utils.Invariants.require;
 
 /**
  * Local or global barriers that return a result once all transactions have their side effects visible.
@@ -68,7 +72,7 @@ import static accord.utils.Invariants.illegalState;
  *
  * Note that reads might still order after, but side effect bearing transactions should not.
  */
-public class Barrier extends AsyncResults.AbstractResult<TxnId>
+public class Barrier extends AsyncResults.AbstractResult<BarrierResult>
 {
     @SuppressWarnings("unused")
     private static final Logger logger = LoggerFactory.getLogger(Barrier.class);
@@ -85,6 +89,30 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
     AsyncResult<? extends SyncPoint<?>> coordinateSyncPoint;
     @VisibleForTesting
     ExistingTransactionCheck existingTransactionCheck;
+
+    public static class BarrierResult
+    {
+        public static final long NO_HLC = Long.MIN_VALUE;
+
+        /**
+         * TxnId of the transaction used as the barrier
+         */
+        public final TxnId txnId;
+
+        /**
+         * The highest used microsecond timestamp by Accord for whatever was barriered.
+         *
+         * This will be INVALID_HLC if the barrier doesn't wait for local application or because the correct HLC can't be determined
+         *
+         **/
+        public final long maxHLC;
+
+        public BarrierResult(TxnId txnId, long maxHLC)
+        {
+            this.txnId = txnId;
+            this.maxHLC = maxHLC;
+        }
+    }
 
     public static class AsyncSyncPoint
     {
@@ -128,10 +156,24 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
      *
      * Returns the Timestamp the barrier actually ended up occurring at. Keep in mind for local barriers it doesn't mean a new transaction was created.
      */
-    public static Barrier barrier(Node node, Seekables<?, ?> keysOrRanges, FullRoute<?> route, long minEpoch, BarrierType barrierType, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
+    public static AsyncResult<Barrier> barrier(Node node, Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
     {
-        Barrier barrier = new Barrier(node, keysOrRanges, route, minEpoch, barrierType, syncPoint);
+        Settable<Barrier> barrierAsyncResult = AsyncResults.settable();
         node.withEpoch(minEpoch, (ignored, failure) -> {
+            FullRoute<?> route = null;
+            Barrier barrier = null;
+            try
+            {
+                // Compute route needcs to be done after withEpoch
+                route = node.computeRoute(minEpoch, keysOrRanges);
+                barrier = new Barrier(node, keysOrRanges, route, minEpoch, barrierType, syncPoint);
+                barrierAsyncResult.setSuccess(barrier);
+            }
+            catch (Throwable t)
+            {
+                barrierAsyncResult.tryFailure(t);
+                return;
+            }
             if (failure != null)
             {
                 barrier.tryFailure(failure);
@@ -139,12 +181,12 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
             }
             barrier.start();
         });
-        return barrier;
+        return barrierAsyncResult;
     }
 
-    public static Barrier barrier(Node node, Seekables<?, ?> keysOrRanges, FullRoute route, long minEpoch, BarrierType barrierType)
+    public static AsyncResult<Barrier> barrier(Node node, Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType)
     {
-        return barrier(node, keysOrRanges, route, minEpoch, barrierType, wrap(barrierType.async ? CoordinateSyncPoint::inclusive : CoordinateSyncPoint::inclusiveAndAwaitQuorum));
+        return barrier(node, keysOrRanges, minEpoch, barrierType, wrap(barrierType.waitOnGlobalQuorum ? CoordinateSyncPoint::inclusiveAndAwaitQuorum : CoordinateSyncPoint::inclusive));
     }
 
     private static BiFunction<Node, FullRoute<?>, AsyncSyncPoint> wrap(TriFunction<Node, TxnId, FullRoute<?>, AsyncResult<? extends SyncPoint<?>>> syncPointFactory)
@@ -185,15 +227,6 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
     {
         AsyncSyncPoint async = syncPoint.apply(node, route);
         coordinateSyncPoint = async.async;
-        if (barrierType.async)
-        {
-            TxnId txnId = async.txnId;
-            long epoch = txnId.epoch();
-            RoutingKey homeKey = route.homeKey();
-            node.withEpoch(epoch, () -> node.commandStores().ifLocal(txnId, homeKey, epoch, epoch, safeStore -> register(safeStore, txnId, homeKey)))
-                .begin(node.agent());
-        }
-
         coordinateSyncPoint.addCallback((syncPoint, syncPointFailure) -> {
             if (syncPointFailure != null)
             {
@@ -201,22 +234,65 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
                 return;
             }
 
-            if (!barrierType.async)
-                Barrier.this.trySuccess(syncPoint.syncId);
+            TxnId txnId = syncPoint.syncId;
+            long epoch = txnId.epoch();
+            // Can only report an accurate Max HLC if we replicated all the ranges in the barrier epoch
+            boolean reportMaxHLC = node.topology().localForEpoch(txnId.epoch()).ranges().containsAll(syncPoint.route);
+
+            Supplier<BarrierCommandListener> listener = barrierCommandListener(txnId, reportMaxHLC);
+            BarrierCommandListener constructionListener = listener.get();
+            node.commandStores().forEach(txnId, syncPoint.route, epoch, epoch,
+                                         safeStore -> safeStore.registerAndInvoke(txnId, route, listener.get()))
+                .begin((success, failure) -> {
+                    if (failure != null)
+                        Barrier.this.tryFailure(failure);
+                    else
+                        constructionListener.decrementWaitingFor();
+                });
         });
+    }
+
+    private Supplier<BarrierCommandListener> barrierCommandListener(TxnId txnId, boolean reportMaxHLC)
+    {
+        BarrierCommandListener listener = new BarrierCommandListener(txnId, reportMaxHLC);
+        return () -> {
+            listener.waitingFor.incrementAndGet();
+            return listener;
+        };
     }
 
     private class BarrierCommandListener implements LocalListeners.ComplexListener
     {
+        final AtomicLong waitingFor = new AtomicLong(0);
+        private final TxnId txnId;
+        private final boolean reportMaxHLC;
+        private final AtomicLong maxHLC = new AtomicLong(BarrierResult.NO_HLC);
+
+        public BarrierCommandListener(TxnId txnId, boolean reportMaxHLC)
+        {
+            this.txnId = txnId;
+            this.reportMaxHLC = reportMaxHLC;
+        }
+
+        public void decrementWaitingFor()
+        {
+            if (waitingFor.decrementAndGet() == 0)
+                Barrier.this.trySuccess(new BarrierResult(txnId, maxHLC.get()));
+        }
+
         @Override
         public boolean notify(SafeCommandStore safeStore, SafeCommand safeCommand)
         {
             Command command = safeCommand.current();
             if (command.is(Status.Applied))
             {
-                // In all the cases where we add a listener (listening to existing command, async completion of CoordinateSyncPoint)
-                // we want to notify the agent
-                Barrier.this.trySuccess(command.txnId());
+                if (reportMaxHLC)
+                {
+                    Ranges rangesAtEpoch = safeStore.ranges().allAt(txnId.epoch());
+                    Seekables<?, ?> appliedSeekables = keysOrRanges.slice(rangesAtEpoch);
+                    maxHLC.accumulateAndGet(safeStore.maxHLCForSeekables(appliedSeekables), Math::max);
+                }
+                decrementWaitingFor();
                 return false;
             }
             else if (command.hasBeen(Status.Truncated))
@@ -231,7 +307,7 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
 
     private ExistingTransactionCheck checkForExistingTransaction()
     {
-        Invariants.require(route.size() == 1 && route.domain() == Domain.Key);
+        require(route.size() == 1 && route.domain() == Domain.Key);
         ExistingTransactionCheck check = new ExistingTransactionCheck();
         RoutingKey k = route.get(0).asRoutingKey();
         node.commandStores().mapReduceConsume(
@@ -241,12 +317,6 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
                 Long.MAX_VALUE,
                 check);
         return check;
-    }
-
-    private void register(SafeCommandStore safeStoreWithTxn, TxnId txnId, RoutableKey key)
-    {
-        BarrierCommandListener listener = new BarrierCommandListener();
-        safeStoreWithTxn.registerAndInvoke(txnId, key.toUnseekable(), listener);
     }
 
     // Hold result of looking for a transaction to act as a barrier for an Epoch
@@ -286,12 +356,18 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
             safeStore.visit(route, startedAfter, AnyGloballyVisible, STARTED_AFTER, startedAfter, IGNORE, this);
             if (found != null)
             {
+                boolean reportMaxHLC = node.topology().localForEpoch(found.txnId.epoch()).ranges().containsAll(keysOrRanges);
+                Supplier<BarrierCommandListener> listener = barrierCommandListener(found.txnId, reportMaxHLC);
+                BarrierCommandListener constructionListener = listener.get();
                 //noinspection SillyAssignment,ConstantConditions
                 safeStore = safeStore; // prevent use in lambda
                 safeStore.commandStore()
-                         .execute(found.txnId, safeStoreWithTxn -> {
-                             register(safeStoreWithTxn, found.txnId, found.key);
-                         }, node.agent());
+                         .execute(found.txnId, safeStoreWithTxn -> safeStoreWithTxn.registerAndInvoke(found.txnId, route, listener.get()), (success, failure) -> {
+                             if (failure != null)
+                                 Barrier.this.tryFailure(failure);
+                             else
+                                 constructionListener.decrementWaitingFor();
+                         });
             }
             return found;
         }
@@ -304,7 +380,7 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
             if (status.compareTo(COMMITTED) < 0 || status == INVALIDATED)
                 return true;
 
-            Invariants.require(found == null);
+            require(found == null);
             if (keyOrRange.domain() == Domain.Key)
                 found = new BarrierTxn(txnId, executeAt, keyOrRange.asRoutingKey());
             return found == null;

@@ -103,7 +103,6 @@ import accord.messages.MessageType;
 import accord.messages.Reply;
 import accord.messages.Request;
 import accord.messages.SafeCallback;
-import accord.primitives.FullRoute;
 import accord.primitives.Keys;
 import accord.primitives.Range;
 import accord.primitives.Ranges;
@@ -1108,7 +1107,7 @@ public class Cluster
             if (type == BarrierType.local)
             {
                 Keys keys = Keys.of(keysInsideRanges(ranges).next(rs));
-                run(node, keys, node.computeRoute(current.epoch(), keys), current.epoch(), type);
+                run(node, keys, current.epoch(), type);
             }
             else
             {
@@ -1121,13 +1120,13 @@ public class Cluster
                 if (subset.isEmpty())
                     return;
                 Ranges rs = Ranges.of(subset.toArray(Range[]::new));
-                run(node, rs, node.computeRoute(current.epoch(), rs), current.epoch(), type);
+                run(node, rs, current.epoch(), type);
             }
         }
 
-        private void run(Node node, Seekables<?, ?> keysOrRanges, FullRoute<?> route, long epoch, BarrierType type)
+        private void run(Node node, Seekables<?, ?> keysOrRanges, long epoch, BarrierType type)
         {
-            Barrier.barrier(node, keysOrRanges, route, epoch, type).begin((s, f) -> {
+            Barrier.barrier(node, keysOrRanges, epoch, type).flatMap(i->i).begin((s, f) -> {
                 if (f != null)
                 {
                     // ignore specific errors
