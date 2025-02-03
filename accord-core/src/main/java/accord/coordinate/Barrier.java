@@ -128,10 +128,23 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
      *
      * Returns the Timestamp the barrier actually ended up occurring at. Keep in mind for local barriers it doesn't mean a new transaction was created.
      */
-    public static Barrier barrier(Node node, Seekables<?, ?> keysOrRanges, FullRoute<?> route, long minEpoch, BarrierType barrierType, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
+    public static AsyncResult<Barrier> barrier(Node node, Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
     {
-        Barrier barrier = new Barrier(node, keysOrRanges, route, minEpoch, barrierType, syncPoint);
+        Settable<Barrier> barrierAsyncResult = AsyncResults.settable();
         node.withEpoch(minEpoch, (ignored, failure) -> {
+            FullRoute<?> route = null;
+            Barrier barrier = null;
+            try
+            {
+                // Compute route needcs to be done after withEpoch
+                route = node.computeRoute(minEpoch, keysOrRanges);
+                barrier = new Barrier(node, keysOrRanges, route, minEpoch, barrierType, syncPoint);
+            }
+            catch (Throwable t)
+            {
+                barrierAsyncResult.tryFailure(t);
+                return;
+            }
             if (failure != null)
             {
                 barrier.tryFailure(failure);
@@ -139,12 +152,12 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
             }
             barrier.start();
         });
-        return barrier;
+        return barrierAsyncResult;
     }
 
-    public static Barrier barrier(Node node, Seekables<?, ?> keysOrRanges, FullRoute route, long minEpoch, BarrierType barrierType)
+    public static AsyncResult<Barrier> barrier(Node node, Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType)
     {
-        return barrier(node, keysOrRanges, route, minEpoch, barrierType, wrap(barrierType.async ? CoordinateSyncPoint::inclusive : CoordinateSyncPoint::inclusiveAndAwaitQuorum));
+        return barrier(node, keysOrRanges, minEpoch, barrierType, wrap(barrierType.async ? CoordinateSyncPoint::inclusive : CoordinateSyncPoint::inclusiveAndAwaitQuorum));
     }
 
     private static BiFunction<Node, FullRoute<?>, AsyncSyncPoint> wrap(TriFunction<Node, TxnId, FullRoute<?>, AsyncResult<? extends SyncPoint<?>>> syncPointFactory)
