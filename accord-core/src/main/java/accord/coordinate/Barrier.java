@@ -139,6 +139,7 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
                 // Compute route needcs to be done after withEpoch
                 route = node.computeRoute(minEpoch, keysOrRanges);
                 barrier = new Barrier(node, keysOrRanges, route, minEpoch, barrierType, syncPoint);
+                barrierAsyncResult.setSuccess(barrier);
             }
             catch (Throwable t)
             {
