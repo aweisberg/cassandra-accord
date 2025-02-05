@@ -220,7 +220,7 @@ public class Barrier extends AsyncResults.AbstractResult<TxnId>
                 TxnId txnId = syncPoint.syncId;
                 long epoch = txnId.epoch();
                 RoutingKey homeKey = syncPoint.route.homeKey();
-                node.commandStores().ifLocal(contextFor(txnId), homeKey, epoch, epoch,
+                node.commandStores().ifLocal(txnId, homeKey, epoch, epoch,
                                              safeStore -> register(safeStore, txnId, homeKey))
                     .begin(node.agent());
             }

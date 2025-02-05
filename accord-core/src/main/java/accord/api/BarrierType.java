@@ -22,9 +22,9 @@ public enum BarrierType
 {
     // Only wait until the barrier is achieved locally, and possibly don't trigger the barrier remotely.
     // Local barriers are only on the `minEpoch` provided and have utility limited to establishing
-    // no more transactions will occur in an earlier before minEpoch
+    // no more transactions will occur in an epoch before minEpoch
     local(false, true),
-    // Wait until the barrier has been achieved at a quorum globally
+    // Wait until the barrier has been achieved at a quorum globally, but do not wait on local application
     global_sync(true, false),
     // Trigger the global barrier, but only block on creation of the barrier and local application
     global_async(true, true);
