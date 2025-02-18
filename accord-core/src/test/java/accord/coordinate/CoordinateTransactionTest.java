@@ -205,17 +205,17 @@ public class CoordinateTransactionTest
             Keys globalSyncBarrierKeys = keys(2, 3);
             // At least one other should have completed by the time it is locally applied, a down node should be fine since it is quorum
             cluster.networkFilter.isolate(cluster.get(2).id());
-            Barrier globalInitiatingBarrier = getBlocking(Barrier.barrier(node, globalSyncBarrierKeys, node.epoch(), BarrierType.global_sync), 10, TimeUnit.SECONDS);
-            Timestamp globalBarrierTimestamp = getUninterruptibly(globalInitiatingBarrier);
+            Barrier globalInitiatingBarrier = getBlocking(Barrier.barrier(node, globalSyncBarrierKeys, node.epoch(), BarrierType.global_async), 10, TimeUnit.SECONDS);
+            Timestamp globalBarrierTimestamp = getUninterruptibly(globalInitiatingBarrier).txnId;
 
             assertNotNull(globalInitiatingBarrier.coordinateSyncPoint);
             cluster.networkFilter.clear();
 
             // The existing barrier should suffice here
             Barrier nonInitiatingLocalBarrier = getBlocking(Barrier.barrier(node, Keys.of(key(2)), node.epoch(), BarrierType.local), 10, TimeUnit.SECONDS);
-            Timestamp previousBarrierTimestamp = getUninterruptibly(nonInitiatingLocalBarrier);
+            Timestamp previousBarrierTimestamp = getUninterruptibly(nonInitiatingLocalBarrier).txnId;
             assertNull(nonInitiatingLocalBarrier.coordinateSyncPoint);
-            assertEquals(previousBarrierTimestamp, getUninterruptibly(nonInitiatingLocalBarrier));
+            assertEquals(previousBarrierTimestamp, getUninterruptibly(nonInitiatingLocalBarrier).txnId);
             assertEquals(previousBarrierTimestamp, globalBarrierTimestamp);
 
             // Sync over nothing should work
@@ -302,8 +302,8 @@ public class CoordinateTransactionTest
             // Command listener for local sync transaction should get notified
             assertTrue(localSyncOccurred.tryAcquire(5, TimeUnit.SECONDS));
             // Listening local barrier should have succeeded in waiting on the local transaction that just applied
-            assertEquals(getUninterruptibly(listeningLocalBarrier), getUninterruptibly(listeningLocalBarrier.existingTransactionCheck).executeAt);
-            assertEquals(txnId, getUninterruptibly(listeningLocalBarrier));
+            assertEquals(getUninterruptibly(listeningLocalBarrier).txnId, getUninterruptibly(listeningLocalBarrier.existingTransactionCheck).executeAt);
+            assertEquals(txnId, getUninterruptibly(listeningLocalBarrier).txnId);
         }
         finally
         {
