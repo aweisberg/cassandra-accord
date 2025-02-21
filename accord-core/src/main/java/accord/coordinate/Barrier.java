@@ -92,7 +92,7 @@ public class Barrier extends AsyncResults.AbstractResult<BarrierResult>
 
     public static class BarrierResult
     {
-        public static final long INVALID_HLC = Long.MIN_VALUE;
+        public static final long NO_HLC = Long.MIN_VALUE;
 
         /**
          * TxnId of the transaction used as the barrier
@@ -266,7 +266,7 @@ public class Barrier extends AsyncResults.AbstractResult<BarrierResult>
         final AtomicLong waitingFor = new AtomicLong(0);
         private final TxnId txnId;
         private final boolean reportMaxHLC;
-        private final AtomicLong maxHLC = new AtomicLong(BarrierResult.INVALID_HLC);
+        private final AtomicLong maxHLC = new AtomicLong(BarrierResult.NO_HLC);
 
         public BarrierCommandListener(TxnId txnId, boolean reportMaxHLC)
         {
